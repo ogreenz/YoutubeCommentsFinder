@@ -1,11 +1,12 @@
 from django.db import connection
 
-class DB:
+class DB(object):
 
     def __init__(self):
         #For Tamar And Alon
         pass
 
+    @staticmethod
     def getVideosAndComments(self, videoName, videoUploader, videoCommenter, commentText):
         cursor = connection.cursor()
 
@@ -14,28 +15,28 @@ class DB:
                 "From searcher_comments, searcher_videos" \
                 "Where searcher_comments.video_id = searcher_videos.video_id" \
 
-        if videoName != null:
+        if videoName is not None:
             query += " And searcher_videos.video_name Like '%" + videoName + "%'"
 
         #if videoUploader != null:
         #   query += "And searcher_videos.video_name Like '%" + videoName + "%'"
 
-        if videoCommenter != null:
+        if videoCommenter is not None:
             query += " And searcher_comments.comment_author_display_name Like '%" + videoCommenter + "%'"
 
-        if commentText != null:
+        if commentText is not None:
             query += " And searcher_comments.comment_text Like '%" + commentText + "%'"
 
         query += " Order by searcher_videos.video_name"
         exec_result = cursor.execute(query)
-        row = cursor.fetchall()
+        rows = cursor.fetchall()
 
 
         if exec_result.rowcount == 0:
             #call the update query..
             self.addVideoToInternalDB(videoName)
 
-        return row
+        return rows
 
     def addVideoToInternalDB(self, videoName):
         #For Tamar And Alon
