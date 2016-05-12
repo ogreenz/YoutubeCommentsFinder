@@ -1,11 +1,8 @@
 {% extends 'base.html' %}
-
+{% block search_results %}
 {% if  results %}
-    {% block search_results %}
-    {% for res in  results%}
-        {% if forloop.counter > 5 %}
-            {% break %}
-        {% endif %}
+
+    {% for res in  results|slice:":5" %}
         <b> {{ res.video_title }}</b>
         <b>by {{ res.video_uploader }}</b>
         <br>
@@ -31,10 +28,9 @@
         {% endif %}
         </table>
     {% endfor %}
-    {% endblock search_results %}
+
 
 {% else %}
-    {% block search_results %}
     <p>Booo no videos were found ):</p>
-    {% endblock search_results %}
 {% endif %}
+    {% endblock search_results %}

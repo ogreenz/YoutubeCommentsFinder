@@ -10,7 +10,7 @@ class DB(object):
 
     @staticmethod
     def getVideosAndComments(videoName, videoUploader, videoCommenter, commentText):
-        DB.fetchFromDB(True, videoName, videoUploader, videoCommenter, commentText)
+        return DB.fetchFromDB(True, videoName, videoUploader, videoCommenter, commentText)
 
     @staticmethod
     def fetchFromDB(isFirstTry, videoName, videoUploader, videoCommenter, commentText):
@@ -21,7 +21,6 @@ class DB(object):
 
         cursor = connection.cursor()
 
-        pdb.set_trace()
 
         searchRes = []
         video_ids = []

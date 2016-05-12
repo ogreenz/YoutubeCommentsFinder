@@ -1,3 +1,4 @@
+{% load staticfiles %}
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
@@ -5,9 +6,8 @@
 <title>Youtube commets</title>
 <meta name="keywords" content="Youtube commets" />
 <meta name="description" content="Youtube commets" />
-<link href="templatemo_style.css" rel="stylesheet" type="text/css" />
+<link href="../../static/searcher/templatemo_style.css" rel="stylesheet" type="text/css" />
 
-<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.2/jquery.min.js"></script>
 </head>
 <body>
 
@@ -32,26 +32,27 @@
 				<h2>Search</h2>
 				insert keywords for search, if keyword is empty - we will not use this parameter in our search
 				</br></br>
-				<form method="post" action="{% url 'searcher:search'  %}", id="search-form">
+            {% comment %}{% url 'searcher:search'  %}{% endcomment %}
+				<form method="post" action="{% url 'searcher' %}", id="search-form">
 					{% csrf_token %}
 					<fieldset>
 
 					<table style="width:100%">
 					  <tr>
 						<td>Video Name:</td>
-						<td><input type="text" id="s" name="s" value="" /></td>
+						<td><input type="text" id="video_name" name="video_name" value="" /></td>
 					  </tr>
 					  <tr>
 						<td>Video uploader:</td>
-						<td><input type="text" id="s" name="s" value="" /></td>
+						<td><input type="text" id="video_uploader" name="video_uploader" value="" /></td>
 					  </tr>
 					  <tr>
 						<td>Video Commenter:</td>
-						<td><input type="text" id="s" name="s" value="" /></td>
+						<td><input type="text" id="commenter" name="commenter" value="" /></td>
 					  </tr>
 					  <tr>
 						<td>Comment keyword:</td>
-						<td><input type="text" id="s" name="s" value="" /></td>
+						<td><input type="text" id="comment_keyword" name="comment_keyword" value="" /></td>
 					  </tr>
 					</table>
 					</br>
