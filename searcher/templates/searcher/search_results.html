@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% block search_results %}
-{% if  results %}
+{% if  results and has_comment_keyword %}
 
     {% for res in  results|slice:":5" %}
         <b> {{ res.video_title }}</b>
@@ -8,6 +8,8 @@
         <br>
         {% if res.is_embed %}
             <iframe width="500" height="300" src={{ res.video_url }} frameborder="0" allowfullscreen></iframe>
+        {% else %}
+            <a href="{{ res.video_url }}">{{ res.video_title }}</a>
         {% endif %}
         <table style="width: 100%">
         <tr>
@@ -27,10 +29,16 @@
             <b>No comments were found.</b>
         {% endif %}
         </table>
+        <br>
+        <br>
     {% endfor %}
 
 
 {% else %}
-    <p>Booo no videos were found ):</p>
+    {% if not has_comment_keyword %}
+        <p>Comment keyword is mandatory for COMMENT search.</p>
+    {% else %}
+        <p>Booo no comments were found ): </p>
+    {% endif %}
 {% endif %}
     {% endblock search_results %}

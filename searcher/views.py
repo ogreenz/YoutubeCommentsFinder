@@ -11,15 +11,18 @@ def index(request):
 def searcher(request):
     form_class = SearchForm
     results = []
+    has_comment_keyword = False
     if request.method == 'POST':
         # form = form_class(data=request.POST)
         # if form.is_valid():
         video_name = request.POST.get("video_name", None)
         video_uploader = request.POST.get("video_uploader", None)
         commenter = request.POST.get("commenter", None)
-        keyword = request.POST.get("keyword", None)
+        keyword = request.POST.get("comment_keyword", None)
         results = DB.DB.getVideosAndComments(video_name, video_uploader, commenter, keyword)
-    context = {'results': results}
+        if keyword:
+            has_comment_keyword = True
+    context = {'results': results, 'has_comment_keyword': has_comment_keyword}
     return render(request, 'searcher/search_results.html', context)
     """
     rows = DB.getVideosAndComments(video_name, uplaoder_name)

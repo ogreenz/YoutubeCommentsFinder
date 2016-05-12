@@ -1,4 +1,5 @@
 from django.db import connection
+from SearchResult import CommentResult, SearchResult
 import pdb
 import searcher
 
@@ -15,7 +16,7 @@ class DB(object):
     @staticmethod
     def fetchFromDB(isFirstTry, videoName, videoUploader, videoCommenter, commentText):
 
-        if commentText is None:
+        if commentText is '':
             # retrn with nothing... we must have commentText to search
             pass
 
@@ -24,6 +25,8 @@ class DB(object):
 
         searchRes = []
         video_ids = []
+        video_rows = []
+        comment_rows = []
 
         is_sub_qurey_has_results = True
 
@@ -33,13 +36,13 @@ class DB(object):
         query = "SELECT	* From searcher_videos as videos, searcher_users as users " \
                 "Where videos.video_channel_id_id = users.user_channel_id "
 
-        if videoName is not None:
+        if videoName != '':
             query += "and videos.video_name Like '%"+videoName+"%' "
-        if videoUploader is not None:
+        if videoUploader != '':
             query += "and users.user_channel_title LIKE '%"+videoUploader+"%' "
 
         query += "Order By videos.video_id"
-        if videoName is not None or videoUploader is not None:
+        if videoName != '' or videoUploader != '':
             exec_result = cursor.execute(query)
             video_rows = cursor.fetchall()
             if len(video_rows) > 0:
@@ -75,14 +78,14 @@ class DB(object):
             if len(video_rows) > 0:
                 query += "and comments.video_id_id in ("+ ",".join(video_ids) + ") "
 
-            if videoCommenter is not None:
-                query += "and searcher_comments.comment_author_display_name Like '%" + videoCommenter + "%' "
+            if videoCommenter != '':
+                query += "and comments.comment_author_display_name Like '%" + videoCommenter + "%' "
 
-            if commentText is not None:
-                query += "and searcher_comments.comment_text Like '%" + commentText + "%' "
+            if commentText != '':
+                query += "and comments.comment_text Like '%" + commentText + "%' "
 
             query += "Order By comments.video_id_id"
-            if videoCommenter is not None or commentText is not None:
+            if videoCommenter != '' or commentText != '':
                 exec_result = cursor.execute(query)
                 comment_rows = cursor.fetchall()
 
@@ -130,10 +133,10 @@ class DB(object):
                 comment_list = []
                 for comment in comment_rows:
                     if video[0] == comment[5]:
-                        cmt = searcher.CommentResult(comment[4] + " as " + comment[1], comment[2], comment[3])
+                        cmt = CommentResult(comment[4] + " as " + comment[1], comment[2], comment[3])
                         comment_list.append(cmt)
                 if len(comment_list) != 0:
-                    vid = searcher.SearchResult(video[1], video[8], comment_list, video[5], video[4])
+                    vid = SearchResult(video[1], video[8], comment_list, video[5], video[4])
                     searchRes.append(vid)
 
         return searchRes
