@@ -1,0 +1,99 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Youtube commets</title>
+<meta name="keywords" content="Youtube commets" />
+<meta name="description" content="Youtube commets" />
+<link href="templatemo_style.css" rel="stylesheet" type="text/css" />
+
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.2/jquery.min.js"></script>
+</head>
+<body>
+
+<div id="templatemo_container_wrapper">
+	<div class="templatemo_spacer"></div>
+<div id="templatemo_container">
+<div id="templatemo_top"> </div>
+  <div id="templatemo_header">
+      <div id="inner_header">
+        <div id="templatemo_site_title">YoutubeComments</div>
+          <div id="templatemo_site_slogan">by Ofir and Dana</div>
+      </div>
+  </div>
+
+      <div id="templatemo_left_column">
+ 		<div class="text_area" align="justify">
+
+		<div class="section_box1" align="justify">
+        <div class="post_title">Find Comment in our videos</div>
+        <div class="text_area">
+        <li id="search">
+				<h2>Search</h2>
+				insert keywords for search, if keyword is empty - we will not use this parameter in our search
+				</br></br>
+				<form method="post" action="{% url 'searcher:search'  %}", id="search-form">
+					{% csrf_token %}
+					<fieldset>
+
+					<table style="width:100%">
+					  <tr>
+						<td>Video Name:</td>
+						<td><input type="text" id="s" name="s" value="" /></td>
+					  </tr>
+					  <tr>
+						<td>Video uploader:</td>
+						<td><input type="text" id="s" name="s" value="" /></td>
+					  </tr>
+					  <tr>
+						<td>Video Commenter:</td>
+						<td><input type="text" id="s" name="s" value="" /></td>
+					  </tr>
+					  <tr>
+						<td>Comment keyword:</td>
+						<td><input type="text" id="s" name="s" value="" /></td>
+					  </tr>
+					</table>
+					</br>
+					<div align="center">
+					<input type="submit" id="x" value="Search" />
+					</div>
+					</fieldset>
+				</form>
+			</li>
+      	</div>
+		</div>
+
+        <div class="section_box2" align="justify">
+        <div class="post_title">Search results</div>
+        <div class="text_area">
+        {% block search_results %}{% endblock %}
+        </div>
+      	</div>
+
+        </div>
+      </div>
+
+    	<div id="templatemo_right_column">
+            <ul class="templatemo_menu">
+              <li><a href="#">Find in our videos</a></li>
+              <li><a href="FindNewVideo.html" target="_parent">Find in a new video</a></li>
+          </ul>
+
+          <div class="section_box" align="justify">
+            <div class="subtitle">Our Team</div>
+              Ofir Green<br />
+              Dana Yehezkely<br />
+              <br />
+          </div>
+    </div>
+
+	<div id="templatemo_footer">
+    Ofir and Dana · <a href="#" target="_parent">Youtube comments</a>
+    </div>
+
+</div>
+<div class="templatemo_spacer"></div>
+</div>
+</body>
+</html>

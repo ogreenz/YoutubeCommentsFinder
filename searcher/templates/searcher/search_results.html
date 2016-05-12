@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+
+{% if  results %}
+    {% block search_results %}
+    {% for res in  results%}
+        {% if forloop.counter > 5 %}
+            {% break %}
+        {% endif %}
+        <b> {{ res.video_title }}</b>
+        <b>by {{ res.video_uploader }}</b>
+        <br>
+        {% if res.is_embed %}
+            <iframe width="500" height="300" src={{ res.video_url }} frameborder="0" allowfullscreen></iframe>
+        {% endif %}
+        <table style="width: 100%">
+        <tr>
+         <td><b> Commenter</b></td>
+         <td><b> Comment</b></td>
+         <td><b> Likes</b></td>
+        </tr>
+        {% if res.comments_list %}
+            {% for comment in res.comments_list %}
+                <tr>
+                <td>{{ comment.user }}</td>
+                <td>{{ comment.content }}</td>
+                <td>{{ comment.likes }}</td>
+                </tr>
+            {% endfor %}
+        {% else %}
+            <b>No comments were found.</b>
+        {% endif %}
+        </table>
+    {% endfor %}
+    {% endblock search_results %}
+
+{% else %}
+    {% block search_results %}
+    <p>Booo no videos were found ):</p>
+    {% endblock search_results %}
+{% endif %}
