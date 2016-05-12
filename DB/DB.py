@@ -133,7 +133,7 @@ class DB(object):
                     if video[0] == comment[5]:
                         cmt = searcher.CommentResult(comment[4] + " as " + comment[1], comment[2], comment[3])
                         comment_list.append(cmt)
-                if (len(comment_list) != 0)
+                if len(comment_list) != 0:
                     vid = searcher.SearchResult(video[1], video[8], comment_list, video[5], video[4])
                     searchRes.append(vid)
 
