@@ -8,9 +8,7 @@
 <link href="templatemo_style.css" rel="stylesheet" type="text/css" />
 </head>
 <body>
-<!--
-This is a free CSS template provided by templatemo.com
--->
+
 <div id="templatemo_container_wrapper">
 	<div class="templatemo_spacer"></div>
 <div id="templatemo_container">
@@ -25,14 +23,15 @@ This is a free CSS template provided by templatemo.com
       <div id="templatemo_left_column">
  		<div class="text_area" align="justify">
 
-		<div class="section_box2" align="justify">
+		<div class="section_box1" align="justify">
         <div class="post_title">Find Comment in our videos</div>
         <div class="text_area">
         <li id="search">
 				<h2>Search</h2>
 				insert keywords for search, if keyword is empty - we will not use this parameter in our search
 				</br></br>
-				<form method="get" action="">
+				<form method="post" action="">
+					{% csrf_token %}
 					<fieldset>
 					
 					<table style="width:100%">
@@ -79,7 +78,7 @@ This is a free CSS template provided by templatemo.com
 		  </tr>
 		  <tr>
 			<td>Dana</td>
-			<td>comment</td> 
+			<td>comment laksjd asldkj asdlkj asl daslkdjalksdj klas alskdjlkas jals alksjd alsk  alskjd alskjd alksjd laskdjkls 8ahlksdlk alskdj0a9uw jdllaskjdlaskjd 99u hlasd</td>
 			<td>10</td>
 		  </tr>
 		   <tr>
