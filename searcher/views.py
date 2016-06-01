@@ -3,8 +3,10 @@ from django.shortcuts import render
 # Create your views here.
 from django.http import HttpResponse
 from django.shortcuts import render
-from forms import SearchForm
-import DB
+from .forms import SearchForm
+from . import DB
+from .PopulateDB import PopulateDB
+
 def index(request):
     return render(request, 'searcher/base.html')
 
@@ -19,7 +21,12 @@ def searcher(request):
         video_uploader = request.POST.get("video_uploader", None)
         commenter = request.POST.get("commenter", None)
         keyword = request.POST.get("comment_keyword", None)
-        results = DB.DB.getVideosAndComments(video_name, video_uploader, commenter, keyword)
+         
+        db = DB.DB()
+        results = db.getVideosAndComments(video_name, video_uploader, commenter, keyword)
+        db.cleanup()
+        #results = DB.DB.getVideosAndComments(video_name, video_uploader, commenter, keyword)
+        
         if keyword:
             has_comment_keyword = True
     context = {'results': results, 'has_comment_keyword': has_comment_keyword}
@@ -37,3 +44,9 @@ def searcher(request):
             return HttpResponse("we got nothing")
         return render(request, 'searcher/index.html', context)
     """
+
+def populateDb(request):
+	db = PopulateDB()
+	db.addVideoAndComments('-OWkLF2HLp0')
+	db.cleanup()
+	return render(request, 'searcher/base.html')
