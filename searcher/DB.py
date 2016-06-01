@@ -1,26 +1,33 @@
 from django.db import connection
-from SearchResult import CommentResult, SearchResult
+from .SearchResult import CommentResult, SearchResult
 import pdb
 import searcher
+import MySQLdb
+
+DB_SERVER = 'mysqlsrv.cs.tau.ac.il'
+DB_NAME = 'DbMysql09'
+DB_USER = DB_NAME
+DB_PASSWORD = DB_NAME
 
 class DB(object):
 
     def __init__(self):
-        #For Tamar And Alon
-        pass
+		self.db_connection = MySQLdb.connect(DB_SERVER, DB_USER, DB_USER, DB_PASSWORD)
+		
+    def cleanup(self):
+        self.db_connection.close()
 
-    @staticmethod
-    def getVideosAndComments(videoName, videoUploader, videoCommenter, commentText):
-        return DB.fetchFromDB(True, videoName, videoUploader, videoCommenter, commentText)
+    def getVideosAndComments(self, videoName, videoUploader, videoCommenter, commentText):
+        return self.fetchFromDB(True, videoName, videoUploader, videoCommenter, commentText)
 
-    @staticmethod
-    def fetchFromDB(isFirstTry, videoName, videoUploader, videoCommenter, commentText):
+    def fetchFromDB(self, isFirstTry, videoName, videoUploader, videoCommenter, commentText):
 
         if commentText is '':
             # retrn with nothing... we must have commentText to search
             pass
 
-        cursor = connection.cursor()
+        #cursor = connection.cursor()
+        cursor = self.db_connection.cursor()
 
 
         searchRes = []
@@ -74,9 +81,9 @@ class DB(object):
         if is_sub_qurey_has_results:
             query = "SELECT	* From searcher_comments as comments, searcher_users as users " \
                     "Where  comments.comment_channel_id_id = users.user_channel_id "
-
             if len(video_rows) > 0:
-                query += "and comments.video_id_id in ("+ ",".join(video_ids) + ") "
+                query += "and comments.video_id_id in ('"+ ",".join(video_ids) + "') "
+
 
             if videoCommenter != '':
                 query += "and comments.comment_author_display_name Like '%" + videoCommenter + "%' "
@@ -133,7 +140,7 @@ class DB(object):
                 comment_list = []
                 for comment in comment_rows:
                     if video[0] == comment[5]:
-                        cmt = CommentResult(comment[4] + " as " + comment[1], comment[2], comment[3])
+                        cmt = CommentResult(comment[1].decode('utf-8'), comment[2].decode('utf-8'), str(comment[3]))
                         comment_list.append(cmt)
                 if len(comment_list) != 0:
                     vid = SearchResult(video[1], video[8], comment_list, video[5], video[4])
