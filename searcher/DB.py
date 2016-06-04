@@ -130,7 +130,7 @@ class DB(object):
             In case no query regarding the video data was preformed-
             now we have the comments data, so we know which video id's we need and we can get the relevant videos data
             """
-            if len(video_ids) <= 0:
+            if (len(video_ids) <= 0) and (len(comment_rows) > 0):
                 #we need to get the video data (because no search related to video was preformed)
                 for row in comment_rows:
                     video_ids.append("'" + row[5] + "'")
