@@ -20,11 +20,23 @@ class DB(object):
     def getVideosAndComments(self, videoName, videoUploader, videoCommenter, commentText):
         return self.fetchFromDB(True, videoName, videoUploader, videoCommenter, commentText)
 
+    @staticmethod
+    def getUtf8EncodedString(strToEncode):
+        if strToEncode is not None:
+            strToEncode = strToEncode.encode('utf-8')
+        return strToEncode
+        
     def fetchFromDB(self, isFirstTry, videoName, videoUploader, videoCommenter, commentText):
 
         if commentText is '':
             # retrn with nothing... we must have commentText to search
             pass
+            
+        # Encoding in utf-8
+        videoName = DB.getUtf8EncodedString(videoName)
+        videoUploader = DB.getUtf8EncodedString(videoUploader)
+        videoCommenter = DB.getUtf8EncodedString(videoCommenter)
+        commentText = DB.getUtf8EncodedString(commentText)
 
         #cursor = connection.cursor()
         cursor = self.db_connection.cursor()
@@ -54,7 +66,7 @@ class DB(object):
             video_rows = cursor.fetchall()
             if len(video_rows) > 0:
                 for row in video_rows:
-                    video_ids.append(row[0])
+                    video_ids.append("'" + row[0] + "'")
             else:
                 is_sub_qurey_has_results = False
                 # lets try to find some video with these params
@@ -82,7 +94,7 @@ class DB(object):
             query = "SELECT	* From searcher_comments as comments, searcher_users as users " \
                     "Where  comments.comment_channel_id_id = users.user_channel_id "
             if len(video_rows) > 0:
-                query += "and comments.video_id_id in ('"+ ",".join(video_ids) + "') "
+                query += "and comments.video_id_id in ("+ ",".join(video_ids) + ") "
 
 
             if videoCommenter != '':
@@ -121,7 +133,7 @@ class DB(object):
             if len(video_ids) <= 0:
                 #we need to get the video data (because no search related to video was preformed)
                 for row in comment_rows:
-                    video_ids.append(row[5])
+                    video_ids.append("'" + row[5] + "'")
 
                 # now we have video id's, and we can preform the query
                 query = "SELECT	* From searcher_videos as videos, searcher_users as users " \
