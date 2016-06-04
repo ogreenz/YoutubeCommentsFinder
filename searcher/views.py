@@ -47,6 +47,6 @@ def searcher(request):
 
 def populateDb(request):
 	db = PopulateDB()
-	db.addVideoAndComments('-OWkLF2HLp0')
+	db.addPopularVideosAndUploadersAndComments()
 	db.cleanup()
 	return render(request, 'searcher/base.html')
