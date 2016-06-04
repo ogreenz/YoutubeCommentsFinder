@@ -2,6 +2,13 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from oauth2client.tools import argparser
 import MySQLdb
+import httplib
+import httplib2
+import os
+import random
+import sys
+import time
+import traceback
 #from django.db import connection
 
 # constants
@@ -13,7 +20,21 @@ DB_NAME = 'DbMysql09'
 DB_USER = DB_NAME
 DB_PASSWORD = DB_NAME
 VIDEO_LIST_PART = 'id, snippet, statistics, status, player'
-VIDEO_LIST_FIELDS = 'items(id ,snippet(channelId, title, thumbnails), statistics(viewCount, commentCount), status(embeddable), player(embedHtml))'
+VIDEO_LIST_FIELDS = 'nextPageToken, items(id ,snippet(channelId, title, thumbnails), statistics(viewCount, commentCount), status(embeddable), player(embedHtml))'
+POPULAR_VIDEOS_MIN = 150
+
+# Maximum number of times to retry before giving up.
+MAX_RETRIES = 3
+
+# Always retry when these exceptions are raised.
+RETRIABLE_EXCEPTIONS = (httplib2.HttpLib2Error, IOError, httplib.NotConnected,
+  httplib.IncompleteRead, httplib.ImproperConnectionState,
+  httplib.CannotSendRequest, httplib.CannotSendHeader,
+  httplib.ResponseNotReady, httplib.BadStatusLine)
+
+# Always retry when an apiclient.errors.HttpError with one of these status
+# codes is raised.
+RETRIABLE_STATUS_CODES = [400, 500, 502, 503, 504]
 
 class PopulateDB(object):
 
@@ -25,6 +46,41 @@ class PopulateDB(object):
         
     def cleanup(self):
         self.db_connection.close()
+        
+    @staticmethod
+    def callMethodWithRetries(method, method_arg1, method_arg2 = None):
+        response = None
+        error = None
+        retry = 0
+        while response is None:
+            try:
+                return method(method_arg1, method_arg2)
+            except HttpError, e:
+                if e.resp.status in RETRIABLE_STATUS_CODES:
+                    error = "A retriable HTTP error %d occurred:\n%s" % (e.resp.status, e.content)
+                else:
+                    raise
+            except RETRIABLE_EXCEPTIONS, e:
+                error = "A retriable error occurred: %s" % e
+
+        if error is not None:
+            print error
+            retry += 1
+            if retry > MAX_RETRIES:
+                print("No longer attempting to retry.")
+                raise
+            max_sleep = 2 ** retry
+            sleep_seconds = random.random() * max_sleep
+            print("Sleeping %f seconds and then retrying..." % sleep_seconds)
+            time.sleep(sleep_seconds)
+    
+    def getChannelListResponse(self, channel_id, dummy_arg = None):
+        channel_list_response = self.youtube_service.channels().list(
+            id = channel_id,
+            part = "snippet",
+            fields = "items(snippet(title))"
+        ).execute()
+        return channel_list_response
     
     def addUser(self, channel_id, user_channel_title = None):
         '''
@@ -33,22 +89,16 @@ class PopulateDB(object):
         If the channel's title is not given, the function uses the youtube service to retrieve it.
         Return True for success, False for failure.
         '''
-        
         if user_channel_title is None:
             # Retrieving the channel's title
-            channel_response = self.youtube_service.channels().list(
-                id = channel_id,
-                part = "snippet",
-                fields = "items(snippet(title))"
-            ).execute()
-            
-            if "items" not in channel_response:
+            channel_list_response = PopulateDB.callMethodWithRetries(self.getChannelListResponse, channel_id)
+            if "items" not in channel_list_response:
                 print("Invalid channel response for channelId = %s: 'items' doens't exist." % (channel_id))
                 return False
-            if len(channel_response["items"]) != 1:
-                print("Invalid channel response for channelId = %s: 'items' has length %d" % (channel_id, len(channel_response["items"])))
+            if len(channel_list_response["items"]) != 1:
+                print("Invalid channel response for channelId = %s: 'items' has length %d" % (channel_id, len(channel_list_response["items"])))
                 return False
-            user_channel = channel_response["items"][0]
+            user_channel = channel_list_response["items"][0]
             user_channel_title = user_channel["snippet"]["title"]
         user_channel_title_encoded = user_channel_title.encode('utf-8')
         
@@ -121,39 +171,44 @@ class PopulateDB(object):
                 comment_snippet["likeCount"]
             )
             
-    def addVideoComments(self, videoId):
+    def getCommentThreadsListReponse(self, video_id, page_token):
+        '''
+        '''
+        requested_fields = "nextPageToken, items(snippet(topLevelComment(id, snippet(authorDisplayName, authorChannelId, textDisplay, likeCount))))"
+        if page_token is None:
+            comment_threads_list_response = self.youtube_service.commentThreads().list(
+                part = "snippet", 
+                fields = requested_fields, 
+                videoId = video_id, 
+                maxResults = 100,
+                textFormat = 'plainText'
+            ).execute()   
+        else:
+            comment_threads_list_response = self.youtube_service.commentThreads().list(
+                part = "snippet", 
+                fields = requested_fields, 
+                videoId = video_id, 
+                maxResults = 100,
+                textFormat = 'plainText',
+                pageToken = page_token
+            ).execute()          
+        return comment_threads_list_response
+            
+    def addVideoComments(self, video_id):
         '''
         Adds comments related to the given video id to the db, using the youtube service.
         '''
-        requested_fields = "nextPageToken, pageInfo, items(snippet(topLevelComment(id, snippet(authorDisplayName, authorChannelId, textDisplay, likeCount))))"
-        
         # Retrieving the first comments page
-        comment_threads = self.youtube_service.commentThreads().list(
-            part = "snippet", 
-            fields = requested_fields, 
-            videoId = videoId, 
-            maxResults = 100,
-            textFormat = 'plainText'
-        ).execute()
-        comments_num = len(comment_threads.get('items', []))
-        self.addCommentPage(comment_threads.get('items', []), videoId)
+        comment_threads_list_response = PopulateDB.callMethodWithRetries(self.getCommentThreadsListReponse, video_id, None)
+        comments_num = len(comment_threads_list_response.get('items', []))
+        self.addCommentPage(comment_threads_list_response.get('items', []), video_id)
 
         # Retrieving the remaining comments pages
-        while 'nextPageToken' in comment_threads:
-
-            next_page_token = comment_threads['nextPageToken']
-            
-            comment_threads = self.youtube_service.commentThreads().list(
-                part = "snippet", 
-                fields = requested_fields, 
-                videoId = videoId, 
-                maxResults = 100,
-                textFormat = 'plainText',
-                pageToken = next_page_token
-            ).execute()
-            
-            comments_num += len(comment_threads.get('items', []))
-            self.addCommentPage(comment_threads.get('items', []), videoId)
+        while 'nextPageToken' in comment_threads_list_response:
+            page_token = comment_threads_list_response['nextPageToken']
+            comment_threads_list_response = PopulateDB.callMethodWithRetries(self.getCommentThreadsListReponse, video_id, page_token)
+            comments_num += len(comment_threads_list_response.get('items', []))
+            self.addCommentPage(comment_threads_list_response.get('items', []), video_id)
             
     
     def addVideo(self, video_resource):
@@ -213,22 +268,55 @@ class PopulateDB(object):
         video_resource = video_list_response.get("items", [])[0]
         return self.addVideoAndUploaderAndCommentsByVideoResource(video_resource)
         
+    def getVideoListResponse(self, page_token, dummy_arg = None):
+        '''
+        '''
+        if page_token is not None:
+            video_list_response = self.youtube_service.videos().list(
+                part = VIDEO_LIST_PART, 
+                fields  = VIDEO_LIST_FIELDS,
+                chart = 'mostPopular', 
+                maxResults = 50,
+                pageToken = page_token
+            ).execute()
+        else:
+            video_list_response = self.youtube_service.videos().list(
+                part = VIDEO_LIST_PART, 
+                fields  = VIDEO_LIST_FIELDS,
+                chart = 'mostPopular', 
+                maxResults = 50
+            ).execute()
+        return video_list_response
+        
+        
     def addPopularVideosAndUploadersAndComments(self):
         '''
-        Finds the popular videos available in Israel, and adds them as well as their uploaders and comments to the db.
+        Finds the popular videos, and adds them as well as their uploaders and comments to the db.
         '''
-        # Retrieving the videos
-        video_list_response = self.youtube_service.videos().list(
-            chart = 'mostPopular', 
-            regionCode = 'IL',
-            part = VIDEO_LIST_PART, 
-            fields  = VIDEO_LIST_FIELDS
-        ).execute()
+        # Retrieving the first videos page
+        video_list_response = PopulateDB.callMethodWithRetries(self.getVideoListResponse, None)
+        videos_num = len(video_list_response.get('items', []))
         
+        video_index = 0
         for video_resource in video_list_response.get("items", []):
+            # TODO: Delete print
+            print("Adding video #%d" % (video_index,))
             self.addVideoAndUploaderAndCommentsByVideoResource(video_resource)
+            video_index += 1
             
- 
+        # Retrieving the remaining videos pages
+        while ('nextPageToken' in video_list_response) and (videos_num < POPULAR_VIDEOS_MIN):
+        
+            video_list_response = PopulateDB.callMethodWithRetries(self.getVideoListResponse, video_list_response['nextPageToken'])    
+            videos_num += len(video_list_response.get('items', []))
+            
+            for video_resource in video_list_response.get("items", []):
+                # TODO: Delete print
+                print("Adding video #%d" % (video_index,))
+                self.addVideoAndUploaderAndCommentsByVideoResource(video_resource)
+                video_index += 1
+
+       
         
 if __name__ == "__main__":
     db = PopulateDB()
