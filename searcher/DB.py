@@ -9,6 +9,29 @@ DB_NAME = 'DbMysql09'
 DB_USER = DB_NAME
 DB_PASSWORD = DB_NAME
 
+# The following dictionaries are based on the order of the attributes in each table in the database.
+USER_ATTRS = { 
+                'user_channel_id':      0, 
+                'user_channel_title':   1 
+             }
+VIDEO_ATTRS = { 
+                'video_id':             0,
+                'video_name':           1,
+                'video_view_count':     2,
+                'video_comment_count':  3,
+                'video_embeddable':     4,
+                'video_url':            5,
+                'video_channel_id_id':  6 
+              }
+
+COMMENT_ATTR = {
+                'comment_id':           0,
+                'comment_text':         1,
+                'like_count':           2,
+                'comment_channel_id_id':3,
+                'video_id_id':          4 
+               }
+
 class DB(object):
 
     def __init__(self):
@@ -66,7 +89,7 @@ class DB(object):
             video_rows = cursor.fetchall()
             if len(video_rows) > 0:
                 for row in video_rows:
-                    video_ids.append("'" + row[0] + "'")
+                    video_ids.append("'" + row[VIDEO_ATTRS['video_id']] + "'")
             else:
                 is_sub_qurey_has_results = False
                 # lets try to find some video with these params
@@ -98,7 +121,7 @@ class DB(object):
 
 
             if videoCommenter != '':
-                query += "and comments.comment_author_display_name Like '%" + videoCommenter + "%' "
+                query += "and users.user_channel_title Like '%" + videoCommenter + "%' "
 
             if commentText != '':
                 query += "and comments.comment_text Like '%" + commentText + "%' "
@@ -133,12 +156,13 @@ class DB(object):
             if (len(video_ids) <= 0) and (len(comment_rows) > 0):
                 #we need to get the video data (because no search related to video was preformed)
                 for row in comment_rows:
-                    video_ids.append("'" + row[5] + "'")
-
+                    video_ids.append("'" + row[COMMENT_ATTR['video_id_id']] + "'")
+                    
                 # now we have video id's, and we can preform the query
                 query = "SELECT	* From searcher_videos as videos, searcher_users as users " \
                         "Where videos.video_channel_id_id = users.user_channel_id " \
                         "and videos.video_id in ("+ ",".join(video_ids) + ") "
+                print(query)
                 exec_result = cursor.execute(query)
                 video_rows = cursor.fetchall()
 
@@ -147,15 +171,21 @@ class DB(object):
 
         if len(video_rows)<=0 we wiil return the empty searchRes and web will know there are no results
         """
-        if len(video_rows) >0:
+        if len(video_rows) > 0:
             for video in video_rows:
                 comment_list = []
                 for comment in comment_rows:
-                    if video[0] == comment[5]:
-                        cmt = CommentResult(comment[1].decode('utf-8'), comment[2].decode('utf-8'), str(comment[3]))
+                    if video[VIDEO_ATTRS['video_id']] == comment[COMMENT_ATTR['video_id_id']]:
+                        cmt = CommentResult(comment[len(COMMENT_ATTR) + USER_ATTRS['user_channel_title']].decode('utf-8'), 
+                                            comment[COMMENT_ATTR['comment_text']].decode('utf-8'), 
+                                            str(comment[COMMENT_ATTR['like_count']]))
                         comment_list.append(cmt)
                 if len(comment_list) != 0:
-                    vid = SearchResult(video[1], video[8], comment_list, video[5], video[4])
+                    vid = SearchResult(video[VIDEO_ATTRS['video_name']], 
+                                       video[len(VIDEO_ATTRS) + USER_ATTRS['user_channel_title']], 
+                                       comment_list, 
+                                       video[VIDEO_ATTRS['video_url']], 
+                                       video[VIDEO_ATTRS['video_embeddable']])
                     searchRes.append(vid)
 
         return searchRes
