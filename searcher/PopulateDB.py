@@ -100,7 +100,22 @@ class PopulateDB(object):
             return False
 
         if len(channel_list_response.get('items', [])) != 1:
-            print("Invalid channel response for channelId = %s: 'items' has length %d" % (channel_id, len(channel_list_response["items"])))
+            print("Invalid channel response for channel_id = %s: 'items' has length %d" % (channel_id, len(channel_list_response.get("items", []))))
+            return False
+            
+        return True
+        
+    @staticmethod
+    def validateChannelResource(channel_resource, channel_id):
+        '''
+        Checks if the given channel resource is valid, and prints an error message if it isn't.
+        '''
+        if 'snippet' not in channel_resource:
+            print("Invalid channel resource for channel_id = %s: 'snippet' field is missing." % (channel_id,))
+            return False
+            
+        if 'title' not in channel_resource['snippet']:
+            print("Invalid channel resource for channel_id = %s: 'snippet.title' field is missing." % (channel_id,))
             return False
             
         return True
@@ -117,8 +132,10 @@ class PopulateDB(object):
             channel_list_response = PopulateDB.callMethodWithRetries(self.getChannelListResponse, channel_id)
             if not PopulateDB.validateChannelListResponse(channel_list_response, channel_id):
                 return False
-            user_channel = channel_list_response["items"][0]
-            user_channel_title = user_channel["snippet"]["title"]
+            user_channel_resource = channel_list_response["items"][0]
+            if not PopulateDB.validateChannelResource(user_channel_resource, channel_id):
+                return False
+            user_channel_title = user_channel_resource["snippet"]["title"]
         user_channel_title_encoded = user_channel_title.encode('utf-8')
         
         # Adding to the db
@@ -137,6 +154,10 @@ class PopulateDB(object):
             self.db_connection.rollback()
             print("Failed inserting the user with channelId = %s to the db." %(channel_id))
             return False
+        except:
+            # Raising the exception again so keyboard interrupt wouldn't be ignored
+            self.db_connection.rollback()
+            raise
         
     @staticmethod
     def getVideoUrl(videoId, isEmbeddable):
@@ -162,19 +183,23 @@ class PopulateDB(object):
             return
             
         text_display_encoded = text_display.encode('utf-8')
-        author_display_name_encoded = author_display_name.encode('utf-8')
         try:
             self.db_cursor.execute(
-                 "INSERT INTO searcher_comments (comment_id, video_id_id, comment_channel_id_id, comment_author_display_name, comment_text, like_count)" \
-                 "Values (%s, %s, %s, %s, %s, %s)" \
+                 "INSERT INTO searcher_comments (comment_id, video_id_id, comment_channel_id_id, comment_text, like_count)" \
+                 "Values (%s, %s, %s, %s, %s)" \
                  "ON DUPLICATE KEY UPDATE comment_id = comment_id",
-                (comment_id, video_id, author_channel_id, author_display_name_encoded, text_display_encoded, like_count)
+                (comment_id, video_id, author_channel_id, text_display_encoded, like_count)
             )
             self.db_connection.commit()
             self.db_records_num += 1
         except Exception as e:
             self.db_connection.rollback()
             print("Failed inserting comment with id = %s to the db" % (comment_id,))
+            return
+        except:
+            # Raising the exception again so keyboard interrupt wouldn't be ignored
+            self.db_connection.rollback()
+            raise
 
     @staticmethod
     def validateCommentThreadResource(comment_thread_resource):
@@ -201,7 +226,7 @@ class PopulateDB(object):
         if 'snippet' not in comment_resource:
             print("comment with id = %s is invalid: 'snippet' field is missing." % (comment_resource['id']))
             return False
-            
+        
         if 'authorDisplayName' not in comment_resource['snippet']:
             print("comment with id = %s is invalid: 'snippet.authorDisplayName' field is missing." % (comment_resource['id']))
             return False
@@ -209,6 +234,10 @@ class PopulateDB(object):
         if 'authorChannelId' not in comment_resource['snippet']:
             print("comment with id = %s is invalid: 'snippet.authorChannelId' field is missing." % (comment_resource['id']))
             return False
+            
+        if 'value' not in comment_resource['snippet']['authorChannelId']:
+            print("comment with id = %s is invalid: 'snippet.authorChannelId.value' field is missing." % (comment_resource['id']))
+            return False            
             
         if 'textDisplay' not in comment_resource['snippet']:
             print("comment with id = %s is invalid: 'snippet.textDisplay' field is missing." % (comment_resource['id']))
@@ -306,7 +335,7 @@ class PopulateDB(object):
         # Adding the video to the db
         try:
             self.db_cursor.execute(
-                 "INSERT INTO searcher_videos (video_id, video_name, video_channel_id_id, video_view_count, video_comment_count, video_embedable, video_url)" \
+                 "INSERT INTO searcher_videos (video_id, video_name, video_channel_id_id, video_view_count, video_comment_count, video_embeddable, video_url)" \
                  "Values (%s, %s, %s, %s, %s, %s, %s)" \
                  "ON DUPLICATE KEY UPDATE video_id = video_id",
                 (video_id, video_name_encoded, video_channel_id, video_view_count, video_comment_count, video_embeddable, video_url)
@@ -318,9 +347,14 @@ class PopulateDB(object):
             self.db_connection.rollback()
             print("Failed inserting the video with id = %s to the db." % (video_id,))
             return False
+        except:
+            # Raising the exception again so keyboard interrupt wouldn't be ignored
+            self.db_connection.rollback()
+            print("Failed inserting the video with id = %s to the db." % (video_id,))
+            raise
         
     @staticmethod
-    def validateVideoResourceisValid(video_resource):
+    def validateVideoResource(video_resource):
         '''
         Validates that the given video resource contains all of the requested parts and fields, 
         and prints an error message in case it doesn't.
@@ -368,7 +402,7 @@ class PopulateDB(object):
         Adds the given video to the db, as well as its uplodaer and its comments.
         video_resource is the youtube video resource.
         '''
-        if not PopulateDB.validateVideoResourceisValid(video_resource):
+        if not PopulateDB.validateVideoResource(video_resource):
             return 
         
         # Adding the user first, then the video and at last the comments (it must be in this order, due to foreign keys constrains).
