@@ -19,9 +19,10 @@ DB_SERVER = 'mysqlsrv.cs.tau.ac.il'
 DB_NAME = 'DbMysql09'
 DB_USER = DB_NAME
 DB_PASSWORD = DB_NAME
-VIDEO_LIST_PART = 'id, snippet, statistics, status, player'
-VIDEO_LIST_FIELDS = 'nextPageToken, items(id ,snippet(channelId, title, thumbnails), statistics(viewCount, commentCount), status(embeddable), player(embedHtml))'
-POPULAR_VIDEOS_MIN = 150
+VIDEO_LIST_PART = 'id, snippet, statistics, status'
+VIDEO_LIST_FIELDS = 'nextPageToken, items(id ,snippet(channelId, title), statistics(viewCount, commentCount), status(embeddable))'
+DB_RECORDS_NUM_MIN = 150000
+COMMENTS_PER_VIDEO_MAX = 2000
 
 # Maximum number of times to retry before giving up.
 MAX_RETRIES = 3
@@ -42,13 +43,19 @@ class PopulateDB(object):
         self.youtube_service = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, developerKey = DEVELOPER_KEY)
         self.db_connection = MySQLdb.connect(DB_SERVER, DB_USER, DB_USER, DB_PASSWORD)
         self.db_cursor = self.db_connection.cursor()
-        #self.db_cursor = connection.cursor()
+        self.db_records_num = 0
         
     def cleanup(self):
         self.db_connection.close()
         
     @staticmethod
     def callMethodWithRetries(method, method_arg1, method_arg2 = None):
+        '''
+        Tries to call the given method with the given arguments.
+        Some exceptions cause another retry (if the retries number hasn't reached the limit) and other cause a failure.
+        This function returns the given method return value, 
+        or None if it raised an non-retriable exception or the retries number has reached the limit.
+        '''
         response = None
         error = None
         retry = 0
@@ -59,7 +66,7 @@ class PopulateDB(object):
                 if e.resp.status in RETRIABLE_STATUS_CODES:
                     error = "A retriable HTTP error %d occurred:\n%s" % (e.resp.status, e.content)
                 else:
-                    raise
+                    return None
             except RETRIABLE_EXCEPTIONS, e:
                 error = "A retriable error occurred: %s" % e
 
@@ -68,7 +75,7 @@ class PopulateDB(object):
             retry += 1
             if retry > MAX_RETRIES:
                 print("No longer attempting to retry.")
-                raise
+                return None
             max_sleep = 2 ** retry
             sleep_seconds = random.random() * max_sleep
             print("Sleeping %f seconds and then retrying..." % sleep_seconds)
@@ -82,6 +89,22 @@ class PopulateDB(object):
         ).execute()
         return channel_list_response
     
+    @staticmethod
+    def validateChannelListResponse(channel_list_response, channel_id):
+        '''
+        Checks if the given channel list response is valid, and print an error message if it isn't.
+        The response must include a single item.
+        '''
+        if channel_list_response is None:
+            print("Failed retrieving the channel list resource")
+            return False
+
+        if len(channel_list_response.get('items', [])) != 1:
+            print("Invalid channel response for channelId = %s: 'items' has length %d" % (channel_id, len(channel_list_response["items"])))
+            return False
+            
+        return True
+    
     def addUser(self, channel_id, user_channel_title = None):
         '''
         Adds the user with the given channel id to the db.
@@ -92,11 +115,7 @@ class PopulateDB(object):
         if user_channel_title is None:
             # Retrieving the channel's title
             channel_list_response = PopulateDB.callMethodWithRetries(self.getChannelListResponse, channel_id)
-            if "items" not in channel_list_response:
-                print("Invalid channel response for channelId = %s: 'items' doens't exist." % (channel_id))
-                return False
-            if len(channel_list_response["items"]) != 1:
-                print("Invalid channel response for channelId = %s: 'items' has length %d" % (channel_id, len(channel_list_response["items"])))
+            if not PopulateDB.validateChannelListResponse(channel_list_response, channel_id):
                 return False
             user_channel = channel_list_response["items"][0]
             user_channel_title = user_channel["snippet"]["title"]
@@ -104,19 +123,20 @@ class PopulateDB(object):
         
         # Adding to the db
         try:
-            self.db_cursor.execute(
+            affected_rows_num = self.db_cursor.execute(
                  "INSERT INTO searcher_users (user_channel_id, user_channel_title) " \
                  "Values (%s, %s) " \
                  "ON DUPLICATE KEY UPDATE user_channel_id = user_channel_id",
                 (channel_id, user_channel_title_encoded)
             )
             self.db_connection.commit()
-        except:
-            # TODO: Handle
+            if affected_rows_num == 1:
+                self.db_records_num += 1
+            return True
+        except Exception as e:
             self.db_connection.rollback()
-            raise
-            
-        return True
+            print("Failed inserting the user with channelId = %s to the db." %(channel_id))
+            return False
         
     @staticmethod
     def getVideoUrl(videoId, isEmbeddable):
@@ -137,7 +157,10 @@ class PopulateDB(object):
         Adds the given comment to the db, after adding its author.
         The given author_display_name and text_display should be as retrieved from the api response (not encoded).
         '''
-        self.addUser(author_channel_id, author_display_name)
+        # First adding the user who commented this comment
+        if not self.addUser(author_channel_id, author_display_name):
+            return
+            
         text_display_encoded = text_display.encode('utf-8')
         author_display_name_encoded = author_display_name.encode('utf-8')
         try:
@@ -148,10 +171,55 @@ class PopulateDB(object):
                 (comment_id, video_id, author_channel_id, author_display_name_encoded, text_display_encoded, like_count)
             )
             self.db_connection.commit()
-        except:
-            # TODO: Handle
+            self.db_records_num += 1
+        except Exception as e:
             self.db_connection.rollback()
-            raise
+            print("Failed inserting comment with id = %s to the db" % (comment_id,))
+
+    @staticmethod
+    def validateCommentThreadResource(comment_thread_resource):
+        '''
+        Checks if the given comment thread resource is valid, and prints an error message if it isn't.
+        '''
+        if 'id' not in comment_thread_resource:
+            print("Invalid comment thread resource: 'id' field is missing")
+            return False
+            
+        if 'snippet' not in comment_thread_resource:
+            print("comment thread with id = %s is invalid: 'snippet' field is missing." % (comment_thread_resource['id']))
+            return False
+            
+        if 'topLevelComment' not in comment_thread_resource['snippet']:
+            print("comment thread with id = %s is invalid: 'snippet.topLevelComment' field is missing." % (comment_thread_resource['id']))
+            return False
+            
+        comment_resource = comment_thread_resource['snippet']['topLevelComment']
+        if 'id' not in comment_resource:
+            print("comment thread with id = %s is invalid: 'snippet.topLevelComment.id' field is missing." % (comment_thread_resource['id']))
+            return False
+            
+        if 'snippet' not in comment_resource:
+            print("comment with id = %s is invalid: 'snippet' field is missing." % (comment_resource['id']))
+            return False
+            
+        if 'authorDisplayName' not in comment_resource['snippet']:
+            print("comment with id = %s is invalid: 'snippet.authorDisplayName' field is missing." % (comment_resource['id']))
+            return False
+
+        if 'authorChannelId' not in comment_resource['snippet']:
+            print("comment with id = %s is invalid: 'snippet.authorChannelId' field is missing." % (comment_resource['id']))
+            return False
+            
+        if 'textDisplay' not in comment_resource['snippet']:
+            print("comment with id = %s is invalid: 'snippet.textDisplay' field is missing." % (comment_resource['id']))
+            return False
+            
+        if 'likeCount' not in comment_resource['snippet']:
+            print("comment with id = %s is invalid: 'snippet.likeCount' field is missing." % (comment_resource['id']))
+            return False                       
+
+        return True
+                       
             
     def addCommentPage(self, commentThreads, videoId):
         '''
@@ -159,22 +227,23 @@ class PopulateDB(object):
         commentThreads is an array of CommentThread resources.
         '''
         print("Adding comment page")
-        for comment_thread in commentThreads:
-            comment = comment_thread["snippet"]["topLevelComment"]
-            comment_snippet = comment["snippet"]
-            self.addSingleComment(
-                comment["id"],
-                videoId,
-                comment_snippet["authorChannelId"]["value"],
-                comment_snippet["authorDisplayName"],
-                comment_snippet["textDisplay"],
-                comment_snippet["likeCount"]
-            )
+        for comment_thread_resource in commentThreads:
+            if PopulateDB.validateCommentThreadResource(comment_thread_resource):
+                comment_resource = comment_thread_resource["snippet"]["topLevelComment"]
+                comment_snippet = comment_resource["snippet"]
+                self.addSingleComment(
+                    comment_resource["id"],
+                    videoId,
+                    comment_snippet["authorChannelId"]["value"],
+                    comment_snippet["authorDisplayName"],
+                    comment_snippet["textDisplay"],
+                    comment_snippet["likeCount"]
+                )
             
     def getCommentThreadsListReponse(self, video_id, page_token):
         '''
         '''
-        requested_fields = "nextPageToken, items(snippet(topLevelComment(id, snippet(authorDisplayName, authorChannelId, textDisplay, likeCount))))"
+        requested_fields = "nextPageToken, items(id, snippet(topLevelComment(id, snippet(authorDisplayName, authorChannelId, textDisplay, likeCount))))"
         if page_token is None:
             comment_threads_list_response = self.youtube_service.commentThreads().list(
                 part = "snippet", 
@@ -197,16 +266,23 @@ class PopulateDB(object):
     def addVideoComments(self, video_id):
         '''
         Adds comments related to the given video id to the db, using the youtube service.
+        Returns True for success or False for failure.
         '''
         # Retrieving the first comments page
         comment_threads_list_response = PopulateDB.callMethodWithRetries(self.getCommentThreadsListReponse, video_id, None)
+        if comment_threads_list_response is None:
+            print("Failed retrieving the comments page")
+            return
         comments_num = len(comment_threads_list_response.get('items', []))
         self.addCommentPage(comment_threads_list_response.get('items', []), video_id)
 
         # Retrieving the remaining comments pages
-        while 'nextPageToken' in comment_threads_list_response:
+        while ('nextPageToken' in comment_threads_list_response) and (comments_num < COMMENTS_PER_VIDEO_MAX):
             page_token = comment_threads_list_response['nextPageToken']
             comment_threads_list_response = PopulateDB.callMethodWithRetries(self.getCommentThreadsListReponse, video_id, page_token)
+            if comment_threads_list_response is None:
+                print("Failed retrieving the comments page")
+                return
             comments_num += len(comment_threads_list_response.get('items', []))
             self.addCommentPage(comment_threads_list_response.get('items', []), video_id)
             
@@ -215,6 +291,7 @@ class PopulateDB(object):
         '''
         Adds the given video to the db. 
         video_resource is the youtube video resource.
+        Returns True for success of False for failure.
         '''
         # Retrieving the video information from the resource
         video_id = video_resource["id"]
@@ -235,22 +312,70 @@ class PopulateDB(object):
                 (video_id, video_name_encoded, video_channel_id, video_view_count, video_comment_count, video_embeddable, video_url)
             )
             self.db_connection.commit()
-        except:
-            # TODO: Handle
+            self.db_records_num += 1
+            return True
+        except Exception as e:
             self.db_connection.rollback()
-            raise
+            print("Failed inserting the video with id = %s to the db." % (video_id,))
+            return False
         
+    @staticmethod
+    def validateVideoResourceisValid(video_resource):
+        '''
+        Validates that the given video resource contains all of the requested parts and fields, 
+        and prints an error message in case it doesn't.
+        '''
+        if 'id' not in video_resource:
+            print("Invalid video resource, 'id' is missing.")
+            return False
+            
+        if 'snippet' not in video_resource:
+            print("Invalid video resource, 'snippet' is missing.")
+            return False
+            
+        if 'channelId' not in video_resource['snippet']:
+            print("Invalid video resource, 'snippet.channelId' is missing.")
+            return False
+            
+        if 'title' not in video_resource['snippet']:
+            print("Invalid video resource, 'snippet.title' is missing.")
+            return False
+            
+        if 'statistics' not in video_resource:
+            print("Invalid video resource, 'statistics' is missing.")
+            return False
+
+        if 'viewCount' not in video_resource['statistics']:
+            print("Invalid video resource, 'statistics.viewCount' is missing.")
+            return False       
+
+        if 'commentCount' not in video_resource['statistics']:
+            print("Invalid video resource, 'statistics.commentCount' is missing.")
+            return False               
+ 
+        if 'status' not in video_resource:
+            print("Invalid video resource, 'status' is missing.")
+            return False
+            
+        if 'embeddable' not in video_resource['status']:
+            print("Invalid video resource, 'status.embeddable' is missing.")
+            return False
+
+        return True
     
     def addVideoAndUploaderAndCommentsByVideoResource(self, video_resource):
         '''
         Adds the given video to the db, as well as its uplodaer and its comments.
         video_resource is the youtube video resource.
         '''
-        # Adding the user first, then the video and at last the comments (it must be in this order, due to foreign keys constrains)
-        if not self.addUser(video_resource["snippet"]["channelId"]):
-            return False
-        self.addVideo(video_resource)
-        return self.addVideoComments(video_resource["id"])
+        if not PopulateDB.validateVideoResourceisValid(video_resource):
+            return 
+        
+        # Adding the user first, then the video and at last the comments (it must be in this order, due to foreign keys constrains).
+        # Each step has to succeed in order for the next one to succeed.
+        if self.addUser(video_resource["snippet"]["channelId"]):
+            if self.addVideo(video_resource):
+                self.addVideoComments(video_resource["id"])
         
         
     def addVideoAndUploaderAndCommentsByVideoId(self, videoId):
@@ -266,7 +391,7 @@ class PopulateDB(object):
         ).execute()
         
         video_resource = video_list_response.get("items", [])[0]
-        return self.addVideoAndUploaderAndCommentsByVideoResource(video_resource)
+        self.addVideoAndUploaderAndCommentsByVideoResource(video_resource)
         
     def getVideoListResponse(self, page_token, dummy_arg = None):
         '''
@@ -288,38 +413,50 @@ class PopulateDB(object):
             ).execute()
         return video_list_response
         
+    def addVideoAndUploaderAndCommentsForVideosList(self, video_list_response, video_index):
+        '''
+        For each video in the given video-list response, tries to add it as well as its uploader and comments to the db.
+        '''
+        for video_resource in video_list_response.get("items", []):
+            if 'id' in video_resource:                    
+                print("Adding video #%d, id = %s" % (video_index, video_resource['id'],))
+            else:
+                print("Adding video #%d" % (video_index,))
+            self.addVideoAndUploaderAndCommentsByVideoResource(video_resource)
+            video_index += 1 
+                
+        return video_index
+        
         
     def addPopularVideosAndUploadersAndComments(self):
         '''
         Finds the popular videos, and adds them as well as their uploaders and comments to the db.
         '''
+        video_index = 0
+        
         # Retrieving the first videos page
         video_list_response = PopulateDB.callMethodWithRetries(self.getVideoListResponse, None)
-        videos_num = len(video_list_response.get('items', []))
-        
-        video_index = 0
-        for video_resource in video_list_response.get("items", []):
-            # TODO: Delete print
-            print("Adding video #%d" % (video_index,))
-            self.addVideoAndUploaderAndCommentsByVideoResource(video_resource)
-            video_index += 1
-            
+        if video_list_response is None:
+            print("Failed retrieving the popular videos page")
+            return
+        video_index = self.addVideoAndUploaderAndCommentsForVideosList(video_list_response, video_index)
+                
         # Retrieving the remaining videos pages
-        while ('nextPageToken' in video_list_response) and (videos_num < POPULAR_VIDEOS_MIN):
+        while ('nextPageToken' in video_list_response) and (self.db_records_num < DB_RECORDS_NUM_MIN):
         
-            video_list_response = PopulateDB.callMethodWithRetries(self.getVideoListResponse, video_list_response['nextPageToken'])    
-            videos_num += len(video_list_response.get('items', []))
-            
-            for video_resource in video_list_response.get("items", []):
-                # TODO: Delete print
-                print("Adding video #%d" % (video_index,))
-                self.addVideoAndUploaderAndCommentsByVideoResource(video_resource)
-                video_index += 1
-
-       
-        
+            video_list_response = PopulateDB.callMethodWithRetries(self.getVideoListResponse, video_list_response['nextPageToken'])  
+            if video_list_response is None:
+                print("Failed retrieving the popular videos page")
+                return
+            video_index = self.addVideoAndUploaderAndCommentsForVideosList(video_list_response, video_index)
+ 
+ 
 if __name__ == "__main__":
     db = PopulateDB()
     db.addPopularVideosAndUploadersAndComments()
+    print("Populated the db with %d records." % (db.db_records_num,))
+    if db.db_records_num < DB_RECORDS_NUM_MIN:
+        print("The required minimal number of records is %d. " \
+              "Consider changing the boundry of number of comments per video." % (DB_RECORDS_NUM_MIN,))
     db.cleanup()
         
