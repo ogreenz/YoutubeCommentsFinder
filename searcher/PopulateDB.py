@@ -23,9 +23,10 @@ VIDEO_LIST_PART = 'id, snippet, statistics, status'
 VIDEO_LIST_FIELDS = 'nextPageToken, items(id ,snippet(channelId, title), statistics(viewCount, commentCount), status(embeddable))'
 DB_RECORDS_NUM_MIN = 150000
 COMMENTS_PER_VIDEO_MAX = 2000
+USAGE = "USAGE: python %s populate | update" % (sys.argv[0])
 
 # Maximum number of times to retry before giving up.
-MAX_RETRIES = 3
+MAX_RETRIES = 2
 
 # Always retry when these exceptions are raised.
 RETRIABLE_EXCEPTIONS = (httplib2.HttpLib2Error, IOError, httplib.NotConnected,
@@ -70,18 +71,22 @@ class PopulateDB(object):
             except RETRIABLE_EXCEPTIONS, e:
                 error = "A retriable error occurred: %s" % e
 
-        if error is not None:
-            print error
-            retry += 1
-            if retry > MAX_RETRIES:
-                print("No longer attempting to retry.")
-                return None
-            max_sleep = 2 ** retry
-            sleep_seconds = random.random() * max_sleep
-            print("Sleeping %f seconds and then retrying..." % sleep_seconds)
-            time.sleep(sleep_seconds)
+            if error is not None:
+                print error
+                retry += 1
+                if retry > MAX_RETRIES:
+                    print("No longer attempting to retry.")
+                    return None
+                max_sleep = 2 ** retry
+                sleep_seconds = random.random() * max_sleep
+                print("Sleeping %f seconds and then retrying..." % sleep_seconds)
+                time.sleep(sleep_seconds)
     
     def getChannelListResponse(self, channel_id, dummy_arg = None):
+        '''
+        Calls the youtube api list method of the resource channels.
+        This should be wrapped with callMethodWithRetries.
+        '''
         channel_list_response = self.youtube_service.channels().list(
             id = channel_id,
             part = "snippet",
@@ -152,11 +157,12 @@ class PopulateDB(object):
             return True
         except Exception as e:
             self.db_connection.rollback()
-            print("Failed inserting the user with channelId = %s to the db." %(channel_id))
+            print("Failed inserting the user with channelId = %s to the db: %s" % (channel_id, str(e),))
             return False
         except:
             # Raising the exception again so keyboard interrupt wouldn't be ignored
             self.db_connection.rollback()
+            print("Failed inserting the user with channelId = %s to the db." % (channel_id,))
             raise
         
     @staticmethod
@@ -194,11 +200,12 @@ class PopulateDB(object):
             self.db_records_num += 1
         except Exception as e:
             self.db_connection.rollback()
-            print("Failed inserting comment with id = %s to the db" % (comment_id,))
+            print("Failed inserting comment with id = %s to the db: %s" % (comment_id, str(e)))
             return
         except:
             # Raising the exception again so keyboard interrupt wouldn't be ignored
             self.db_connection.rollback()
+            print("Failed inserting comment with id = %s to the db: %s" % (comment_id,))
             raise
 
     @staticmethod
@@ -271,6 +278,8 @@ class PopulateDB(object):
             
     def getCommentThreadsListReponse(self, video_id, page_token):
         '''
+        Calls the youtube api list method of the resource CommentsThreads.
+        This should be wrapped with callMethodWithRetries.
         '''
         requested_fields = "nextPageToken, items(id, snippet(topLevelComment(id, snippet(authorDisplayName, authorChannelId, textDisplay, likeCount))))"
         if page_token is None:
@@ -300,7 +309,7 @@ class PopulateDB(object):
         # Retrieving the first comments page
         comment_threads_list_response = PopulateDB.callMethodWithRetries(self.getCommentThreadsListReponse, video_id, None)
         if comment_threads_list_response is None:
-            print("Failed retrieving the comments page")
+            print("Failed retrieving the first comments page")
             return
         comments_num = len(comment_threads_list_response.get('items', []))
         self.addCommentPage(comment_threads_list_response.get('items', []), video_id)
@@ -310,7 +319,7 @@ class PopulateDB(object):
             page_token = comment_threads_list_response['nextPageToken']
             comment_threads_list_response = PopulateDB.callMethodWithRetries(self.getCommentThreadsListReponse, video_id, page_token)
             if comment_threads_list_response is None:
-                print("Failed retrieving the comments page")
+                print("Failed retrieving the comments page with the page_token = %s" % (page_token))
                 return
             comments_num += len(comment_threads_list_response.get('items', []))
             self.addCommentPage(comment_threads_list_response.get('items', []), video_id)
@@ -345,7 +354,7 @@ class PopulateDB(object):
             return True
         except Exception as e:
             self.db_connection.rollback()
-            print("Failed inserting the video with id = %s to the db." % (video_id,))
+            print("Failed inserting the video with id = %s to the db: %s" % (video_id, str(e),))
             return False
         except:
             # Raising the exception again so keyboard interrupt wouldn't be ignored
@@ -427,8 +436,10 @@ class PopulateDB(object):
         video_resource = video_list_response.get("items", [])[0]
         self.addVideoAndUploaderAndCommentsByVideoResource(video_resource)
         
-    def getVideoListResponse(self, page_token, dummy_arg = None):
+    def getPopularVideoListResponse(self, page_token, dummy_arg = None):
         '''
+        Calls the youtube api list method of the resource Video, in order to find the popular videos.
+        This should be wrapped with callMethodWithRetries.
         '''
         if page_token is not None:
             video_list_response = self.youtube_service.videos().list(
@@ -469,26 +480,206 @@ class PopulateDB(object):
         video_index = 0
         
         # Retrieving the first videos page
-        video_list_response = PopulateDB.callMethodWithRetries(self.getVideoListResponse, None)
+        video_list_response = PopulateDB.callMethodWithRetries(self.getPopularVideoListResponse, None)
         if video_list_response is None:
-            print("Failed retrieving the popular videos page")
+            print("Failed retrieving the first page of popular videos.")
             return
         video_index = self.addVideoAndUploaderAndCommentsForVideosList(video_list_response, video_index)
                 
         # Retrieving the remaining videos pages
         while ('nextPageToken' in video_list_response) and (self.db_records_num < DB_RECORDS_NUM_MIN):
         
-            video_list_response = PopulateDB.callMethodWithRetries(self.getVideoListResponse, video_list_response['nextPageToken'])  
+            page_token = video_list_response['nextPageToken']
+            video_list_response = PopulateDB.callMethodWithRetries(self.getPopularVideoListResponse, page_token)  
             if video_list_response is None:
-                print("Failed retrieving the popular videos page")
+                print("Failed retrieving the popular videos page with page_token = %s" % (page_token,))
                 return
             video_index = self.addVideoAndUploaderAndCommentsForVideosList(video_list_response, video_index)
- 
- 
+
+    def getSpecificVideoListResponse(self, video_ids, dummy_arg = None):
+        '''
+        Calls the youtube api list method of the resource Videos, in order to retrieve infomration regarding
+        the given videos (their ids are given).
+        This should be wrapped with callMethodWithRetries.
+        '''
+        video_list_response = self.youtube_service.videos().list(
+            part = VIDEO_LIST_PART, 
+            fields  = VIDEO_LIST_FIELDS,
+            id = video_ids, 
+            maxResults = 50
+        ).execute()
+        return video_list_response
+        
+    def removeVideo(self, video_resource):
+        '''
+        Removes the given video from the db, if possible.
+        '''
+        if 'id' not in video_resource:
+            return
+        video_id = video_resource["id"]
+        
+        try:
+            self.db_cursor.execute(
+                "DELETE FROM searcher_comments " \
+                "WHERE comment_id = '%s'" 
+                (video_id)
+            )
+            self.db_connection.commit()
+            self.db_records_num -= 1
+            return True
+        except Exception as e:
+            self.db_connection.rollback()
+            print("Failed removing the video with id = %s: %s" % (video_id, str(e),))
+            return False
+        except:
+            # Raising the exception again so keyboard interrupt wouldn't be ignored
+            self.db_connection.rollback()
+            print("Failed removing the video with id = %s." % (video_id,))
+            raise
+        
+    def updateVideo(self, video_resource):
+        '''
+        Updates the tuple of the given video in search_videos.
+        Returns True for success, False for failure.
+        '''
+        # Retrieving the video information from the resource
+        video_id = video_resource["id"]
+        video_name = video_resource["snippet"]["title"]
+        video_name_encoded = video_name.encode('utf-8')
+        video_view_count = int(video_resource["statistics"]["viewCount"])
+        video_comment_count = int(video_resource["statistics"]["commentCount"])
+        video_embeddable = video_resource["status"]["embeddable"]
+        video_url = PopulateDB.getVideoUrl(video_id, video_embeddable)
+        
+        # Updating the video's row in the db
+        try:
+            self.db_cursor.execute(
+                "UPDATE  searcher_videos " \
+                "SET     video_name = %s, video_view_count = %s, video_comment_count = %s, video_embeddable = %s, video_url = %s " \
+                "WHERE   video_id = %s",
+                (video_name_encoded, video_view_count, video_comment_count, video_embeddable, video_url, video_id)
+            )
+            self.db_connection.commit()
+            self.db_records_num += 1
+            return True
+        except Exception as e:
+            self.db_connection.rollback()
+            print("Failed updating the video with id = %s: %s" % (video_id, str(e),))
+            return False
+        except:
+            # Raising the exception again so keyboard interrupt wouldn't be ignored
+            self.db_connection.rollback()
+            print("Failed updating the video with id = %s." % (video_id,))
+            raise
+
+        
+    def updateVideoAndAddCommentsByVideoResource(self, video_resource):
+        '''
+        Updates the given video and adds its comments.
+        '''
+        if not PopulateDB.validateVideoResource(video_resource):
+            self.removeVideo(video_resource)
+            return 
+        
+        if self.updateVideo(video_resource):
+            self.addVideoComments(video_resource["id"])
+   
+    def updateVideoAndAddCommentsForVideosList(self, video_list_response, video_index):
+        '''
+        For each video in the given video-list response, tries to update it and add its comments to the db.
+        '''
+        for video_resource in video_list_response.get("items", []):
+            if 'id' in video_resource:                    
+                print("Updating video #%d, id = %s" % (video_index, video_resource['id'],))
+            else:
+                print("Updating video #%d" % (video_index,))
+            self.updateVideoAndAddCommentsByVideoResource(video_resource)
+            video_index += 1 
+                
+        return video_index
+            
+    def updateExistingVideosAndAddComments(self):
+        '''
+        Updates the information of the existing videos and add their comments.
+        '''
+        # Retrieving the ids of the videos
+        video_ids = []
+        try:
+            query_exec_result = self.db_cursor.execute('SELECT video_id FROM searcher_videos')
+            video_rows = self.db_cursor.fetchall()
+        except Exception as e:
+            print("Failed retrieving the ids of the videos from the db: %s" % (str(e),))
+            return
+        except:
+            # Raising the exception again so keyboard interrupt wouldn't be ignored
+            print("Failed retrieving the ids of the videos from the db")
+            raise
+            
+        for video_row in video_rows:
+            video_ids.append(video_row[0])
+        
+        # Retrieving the information on each group of videos, each group has at most 50 videos (because of the api limitation)
+        video_index = 0
+        video_id_groups = [video_ids[i : i + 50] for i in range(0, len(video_ids), 50)]
+        for video_id_group in video_id_groups:
+            video_list_response = PopulateDB.callMethodWithRetries(self.getSpecificVideoListResponse, ",".join(video_id_group))
+            if video_list_response is None:
+                print("Failed retrieving information regarding the following video group: %s" % (str(video_id_group),))
+                return
+            video_index = self.updateVideoAndAddCommentsForVideosList(video_list_response, video_index)
+            
+    def updateDB(self):
+        '''
+        Updates the db by deleting the existing comments and their authors (except for those who are also uploaders),
+        updating the existing videos and at last adding the new comments (and their authors).
+        '''
+        try:
+            print("Deleting the all of the existing comments and their authors")
+            # Deleting all comments-authors (except for authors who are also uploaders), 
+            # which will cause also the cascading deletion of their comments.
+            self.db_cursor.execute("DELETE FROM searcher_users "                \
+                                   "WHERE user_channel_id NOT IN "              \
+                                   "    (SELECT DISTINCT video_channel_id_id "  \
+                                   "     FROM searcher_videos)"
+            )
+            # Deleting the uploader's comments that weren't cascadingly deleted
+            # TODO: Is it possible, mysql-wise, to just delete all of the table without a 'where' clause?
+            self.db_cursor.execute("DELETE FROM searcher_comments "             \
+                                   "WHERE comment_channel_id_id IN "            \
+                                   "    (SELECT DISTINCT video_channel_id_id "  \
+                                   "     FROM searcher_videos)"
+            )
+            self.db_connection.commit()
+        except Exception as e:
+            self.db_connection.rollback()
+            print("Failed deleting the comments or the authors from the db: %s" % (str(e)))
+            return
+        except:
+            # Raising the exception again so keyboard interrupt wouldn't be ignored
+            self.db_connection.rollback()
+            print("Failed deleting comments-authors (and their comments) from the db.")
+            raise
+            
+        self.updateExistingVideosAndAddComments()
+        
 if __name__ == "__main__":
+
+    if len(sys.argv) > 2:
+        print(USAGE)
+        exit()
+        
     db = PopulateDB()
-    db.addPopularVideosAndUploadersAndComments()
-    print("Populated the db with %d records." % (db.db_records_num,))
+    if (len(sys.argv) == 1) or (sys.argv[1] == 'populate'):
+        db.addPopularVideosAndUploadersAndComments()
+        print("Populated the db with %d records." % (db.db_records_num,))
+    elif sys.argv[1] == 'update':
+        db.updateDB()
+        print("After update: db has %d records." % (db.db_records_num))
+    else:
+        print(USAGE)
+        db.cleanup()
+        exit()
+        
     if db.db_records_num < DB_RECORDS_NUM_MIN:
         print("The required minimal number of records is %d. " \
               "Consider changing the boundry of number of comments per video." % (DB_RECORDS_NUM_MIN,))
