@@ -13,25 +13,28 @@ NEW_VIDEOS_PER_UNSUCCESSFUL_SEARCH = 1
 
 # The following dictionaries are based on the order of the attributes in each table in the database
 USER_ATTRS = { 
-                'user_channel_id':      0, 
-                'user_channel_title':   1 
+                'user_channel_id':          0, 
+                'user_channel_youtube_id':  1,
+                'user_channel_title':       2
              }
 VIDEO_ATTRS = { 
-                'video_id':             0,
-                'video_name':           1,
-                'video_view_count':     2,
-                'video_comment_count':  3,
-                'video_embeddable':     4,
-                'video_url':            5,
-                'video_channel_id_id':  6 
+                'video_id':                 0,
+                'video_youtube_id':         1,
+                'video_name':               2,
+                'video_view_count':         3,
+                'video_comment_count':      4,
+                'video_embeddable':         5,
+                'video_url':                6,
+                'video_channel_id_id':      7 
               }
 
 COMMENT_ATTR = {
-                'comment_id':           0,
-                'comment_text':         1,
-                'like_count':           2,
-                'comment_channel_id_id':3,
-                'video_id_id':          4 
+                'comment_id':               0,
+                'comment_youtube_id':       1,
+                'comment_text':             2,
+                'like_count':               3,
+                'comment_channel_id_id':    4,
+                'video_id_id':              5 
                }
 
 class DB(object):
@@ -92,7 +95,7 @@ class DB(object):
             video_rows = cursor.fetchall()
             if len(video_rows) > 0:
                 for row in video_rows:
-                    video_ids.append("'" + row[VIDEO_ATTRS['video_id']] + "'")
+                    video_ids.append("'" + str(row[VIDEO_ATTRS['video_id']]) + "'")
             else:
                 is_sub_qurey_has_results = False
                 # lets try to find some video with these params
@@ -157,7 +160,7 @@ class DB(object):
             if (len(video_ids) <= 0) and (len(comment_rows) > 0):
                 #we need to get the video data (because no search related to video was preformed)
                 for row in comment_rows:
-                    video_ids.append("'" + row[COMMENT_ATTR['video_id_id']] + "'")
+                    video_ids.append("'" + str(row[COMMENT_ATTR['video_id_id']]) + "'")
                     
                 # now we have video id's, and we can preform the query
                 query = "SELECT	* From searcher_videos as videos, searcher_users as users " \
