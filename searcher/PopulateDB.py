@@ -4,12 +4,9 @@ from oauth2client.tools import argparser
 import MySQLdb
 import httplib
 import httplib2
-import os
 import random
 import sys
 import time
-import traceback
-#from django.db import connection
 
 # constants
 DEVELOPER_KEY = "AIzaSyBs2Te9khQZNLYB2N0chEq3bRx3qtikNSI"
