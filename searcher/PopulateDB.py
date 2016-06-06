@@ -138,44 +138,53 @@ class PopulateDB(object):
             
         return True
     
-    def addUser(self, channel_id, user_channel_title = None):
+    def addUser(self, channel_youtube_id, user_channel_title = None):
         '''
         Adds the user with the given channel id to the db.
         If the channel's title is given, it should be given as retrieved from the api response (not encoded).
         If the channel's title is not given, the function uses the youtube service to retrieve it.
-        Return True for success, False for failure.
+        Return the user id (the db primary key) or None if an error occured.
         '''
         if user_channel_title is None:
             # Retrieving the channel's title
-            channel_list_response = PopulateDB.callMethodWithRetries(self.getChannelListResponse, channel_id)
-            if not PopulateDB.validateChannelListResponse(channel_list_response, channel_id):
-                return False
+            channel_list_response = PopulateDB.callMethodWithRetries(self.getChannelListResponse, channel_youtube_id)
+            if not PopulateDB.validateChannelListResponse(channel_list_response, channel_youtube_id):
+                return None
             user_channel_resource = channel_list_response["items"][0]
-            if not PopulateDB.validateChannelResource(user_channel_resource, channel_id):
-                return False
+            if not PopulateDB.validateChannelResource(user_channel_resource, channel_youtube_id):
+                return None
             user_channel_title = user_channel_resource["snippet"]["title"]
         user_channel_title_encoded = user_channel_title.encode('utf-8')
         
         # Adding to the db
         try:
-            affected_rows_num = self.db_cursor.execute(
-                 "INSERT INTO searcher_users (user_channel_id, user_channel_title) " \
-                 "Values (%s, %s) " \
-                 "ON DUPLICATE KEY UPDATE user_channel_id = user_channel_id",
-                (channel_id, user_channel_title_encoded)
-            )
-            self.db_connection.commit()
-            if affected_rows_num == 1:
+            # Making sure to follow the unique constraint of user_channel_youtube_id
+            self.db_cursor.execute(
+                "SELECT user_channel_id " \
+                "FROM searcher_users " \
+                "WHERE user_channel_youtube_id = %s",
+                (channel_youtube_id))
+            user_rows = self.db_cursor.fetchall()
+            if len(user_rows) == 0:
+                self.db_cursor.execute(
+                     "INSERT INTO searcher_users (user_channel_youtube_id, user_channel_title) " \
+                     "Values (%s, %s) ",
+                    (channel_youtube_id, user_channel_title_encoded)
+                )
+                user_id = self.db_cursor.lastrowid
+                self.db_connection.commit()
                 self.db_records_num += 1
-            return True
+            else:
+                user_id = user_rows[0][0]
+            return user_id
         except Exception as e:
             self.db_connection.rollback()
-            print("Failed inserting the user with channelId = %s to the db: %s" % (channel_id, str(e),))
-            return False
+            print("Failed inserting the user with channel_youtube_id = %s to the db: %s" % (channel_youtube_id, str(e),))
+            return None
         except:
             # Raising the exception again so keyboard interrupt wouldn't be ignored
             self.db_connection.rollback()
-            print("Failed inserting the user with channelId = %s to the db." % (channel_id,))
+            print("Failed inserting the user with channel_youtube_id = %s to the db." % (channel_youtube_id,))
             raise
         
     @staticmethod
@@ -192,34 +201,41 @@ class PopulateDB(object):
         return video_url
 
         
-    def addSingleComment(self, comment_id, video_id, author_channel_id, author_display_name, text_display, like_count):
+    def addSingleComment(self, comment_youtube_id, video_id, author_channel_youtube_id, author_display_name, text_display, like_count):
         '''
         Adds the given comment to the db, after adding its author.
         The given author_display_name and text_display should be as retrieved from the api response (not encoded).
         '''
         # First adding the user who commented this comment
-        if not self.addUser(author_channel_id, author_display_name):
+        user_id = self.addUser(author_channel_youtube_id, author_display_name)
+        if user_id is None:
             return
             
         text_display_encoded = text_display.encode('utf-8')
         try:
-            affected_rows_num = self.db_cursor.execute(
-                 "INSERT INTO searcher_comments (comment_id, video_id_id, comment_channel_id_id, comment_text, like_count)" \
-                 "Values (%s, %s, %s, %s, %s)" \
-                 "ON DUPLICATE KEY UPDATE comment_id = comment_id",
-                (comment_id, video_id, author_channel_id, text_display_encoded, like_count)
-            )
-            self.db_connection.commit()
-            if affected_rows_num == 1:
+            # Making sure to follow the unique constraint of comment_youtube_id
+            self.db_cursor.execute(
+                "SELECT comment_id " \
+                "FROM searcher_comments " \
+                "WHERE comment_youtube_id = %s",
+                (comment_youtube_id))
+            comment_rows = self.db_cursor.fetchall()
+            if len(comment_rows) == 0:
+                self.db_cursor.execute(
+                     "INSERT INTO searcher_comments (comment_youtube_id, video_id_id, comment_channel_id_id, comment_text, like_count)" \
+                     "Values (%s, %s, %s, %s, %s)",
+                    (comment_youtube_id, video_id, user_id, text_display_encoded, like_count)
+                )
+                self.db_connection.commit()
                 self.db_records_num += 1
         except Exception as e:
             self.db_connection.rollback()
-            print("Failed inserting comment with id = %s to the db: %s" % (comment_id, str(e)))
+            print("Failed inserting comment with youtube_id = %s to the db: %s" % (comment_youtube_id, str(e)))
             return
         except:
             # Raising the exception again so keyboard interrupt wouldn't be ignored
             self.db_connection.rollback()
-            print("Failed inserting comment with id = %s to the db: %s" % (comment_id,))
+            print("Failed inserting comment with youtube_id = %s to the db: %s" % (comment_youtube_id,))
             raise
 
     @staticmethod
@@ -290,7 +306,7 @@ class PopulateDB(object):
                     comment_snippet["likeCount"]
                 )
             
-    def getCommentThreadsListReponse(self, video_id, page_token):
+    def getCommentThreadsListReponse(self, video_youtube_id, page_token):
         '''
         Calls the youtube api list method of the resource CommentsThreads.
         This should be wrapped with callMethodWithRetries.
@@ -300,7 +316,7 @@ class PopulateDB(object):
             comment_threads_list_response = self.youtube_service.commentThreads().list(
                 part = "snippet", 
                 fields = requested_fields, 
-                videoId = video_id, 
+                videoId = video_youtube_id, 
                 maxResults = 100,
                 textFormat = 'plainText'
             ).execute()   
@@ -308,20 +324,20 @@ class PopulateDB(object):
             comment_threads_list_response = self.youtube_service.commentThreads().list(
                 part = "snippet", 
                 fields = requested_fields, 
-                videoId = video_id, 
+                videoId = video_youtube_id, 
                 maxResults = 100,
                 textFormat = 'plainText',
                 pageToken = page_token
             ).execute()          
         return comment_threads_list_response
             
-    def addVideoComments(self, video_id):
+    def addVideoComments(self, video_id, video_youtube_id):
         '''
-        Adds comments related to the given video id to the db, using the youtube service.
+        Adds comments related to the given video youtube id to the db, using the youtube service.
         Returns True for success or False for failure.
         '''
         # Retrieving the first comments page
-        comment_threads_list_response = PopulateDB.callMethodWithRetries(self.getCommentThreadsListReponse, video_id, None)
+        comment_threads_list_response = PopulateDB.callMethodWithRetries(self.getCommentThreadsListReponse, video_youtube_id, None)
         if comment_threads_list_response is None:
             print("Failed retrieving the first comments page")
             return
@@ -331,7 +347,7 @@ class PopulateDB(object):
         # Retrieving the remaining comments pages
         while ('nextPageToken' in comment_threads_list_response) and (comments_num < self.comments_per_video_max):
             page_token = comment_threads_list_response['nextPageToken']
-            comment_threads_list_response = PopulateDB.callMethodWithRetries(self.getCommentThreadsListReponse, video_id, page_token)
+            comment_threads_list_response = PopulateDB.callMethodWithRetries(self.getCommentThreadsListReponse, video_youtube_id, page_token)
             if comment_threads_list_response is None:
                 print("Failed retrieving the comments page with the page_token = %s" % (page_token))
                 return
@@ -339,42 +355,51 @@ class PopulateDB(object):
             self.addCommentPage(comment_threads_list_response.get('items', []), video_id)
             
     
-    def addVideo(self, video_resource):
+    def addVideo(self, user_id, video_resource):
         '''
         Adds the given video to the db. 
         video_resource is the youtube video resource.
-        Returns True for success of False for failure.
+        Returns the video id (the primary key of the db) or None if an error occured.
         '''
         # Retrieving the video information from the resource
-        video_id = video_resource["id"]
+        video_youtube_id = video_resource["id"]
         video_name = video_resource["snippet"]["title"]
         video_name_encoded = video_name.encode('utf-8')
-        video_channel_id = video_resource["snippet"]["channelId"]
         video_view_count = int(video_resource["statistics"]["viewCount"])
         video_comment_count = int(video_resource["statistics"]["commentCount"])
         video_embeddable = video_resource["status"]["embeddable"]
-        video_url = PopulateDB.getVideoUrl(video_id, video_embeddable)
+        video_url = PopulateDB.getVideoUrl(video_youtube_id, video_embeddable)
         
         # Adding the video to the db
         try:
-            affected_rows_num = self.db_cursor.execute(
-                 "INSERT INTO searcher_videos (video_id, video_name, video_channel_id_id, video_view_count, video_comment_count, video_embeddable, video_url)" \
-                 "Values (%s, %s, %s, %s, %s, %s, %s)" \
-                 "ON DUPLICATE KEY UPDATE video_id = video_id",
-                (video_id, video_name_encoded, video_channel_id, video_view_count, video_comment_count, video_embeddable, video_url)
-            )
-            self.db_connection.commit()
-            if affected_rows_num == 1:
+            # Making sure to follow the unique constraint of video_youtube_id
+            self.db_cursor.execute(
+                "SELECT video_id " \
+                "FROM searcher_videos " \
+                "WHERE video_youtube_id = %s",
+                (video_youtube_id))
+            video_rows = self.db_cursor.fetchall()
+            if len(video_rows) == 0:
+                self.db_cursor.execute(
+                     "INSERT INTO searcher_videos (video_youtube_id, video_name, video_channel_id_id, video_view_count, video_comment_count, video_embeddable, video_url)" \
+                     "Values (%s, %s, %s, %s, %s, %s, %s)" \
+                     "ON DUPLICATE KEY UPDATE video_youtube_id = video_youtube_id",
+                    (video_youtube_id, video_name_encoded, user_id, video_view_count, video_comment_count, video_embeddable, video_url)
+                )
+                video_id = self.db_cursor.lastrowid
+                self.db_connection.commit()
                 self.db_records_num += 1
-            return True
+            else:
+                video_id = video_rows[0][0]
+            return video_id
         except Exception as e:
             self.db_connection.rollback()
-            print("Failed inserting the video with id = %s to the db: %s" % (video_id, str(e),))
-            return False
+            print("Failed inserting the video with youtube_id = %s to the db: %s" % (video_youtube_id, str(e),))
+            return None
         except:
             # Raising the exception again so keyboard interrupt wouldn't be ignored
             self.db_connection.rollback()
-            print("Failed inserting the video with id = %s to the db." % (video_id,))
+            print("Failed inserting the video with youtube_id = %s to the db." % (video_youtube_id,))
             raise
         
     @staticmethod
@@ -431,9 +456,11 @@ class PopulateDB(object):
         
         # Adding the user first, then the video and at last the comments (it must be in this order, due to foreign keys constrains).
         # Each step has to succeed in order for the next one to succeed.
-        if self.addUser(video_resource["snippet"]["channelId"]):
-            if self.addVideo(video_resource):
-                self.addVideoComments(video_resource["id"])
+        user_id = self.addUser(video_resource["snippet"]["channelId"])
+        if user_id is not None:
+            video_id = self.addVideo(user_id, video_resource)
+            if video_id is not None:
+                self.addVideoComments(video_id, video_resource["id"])
         
         
     def addVideoAndUploaderAndCommentsByVideoId(self, videoId):
@@ -479,7 +506,7 @@ class PopulateDB(object):
         '''
         for video_resource in video_list_response.get("items", []):
             if 'id' in video_resource:                    
-                print("Adding video #%d, id = %s" % (video_index, video_resource['id'],))
+                print("Adding video #%d, youtube_id = %s" % (video_index, video_resource['id'],))
             else:
                 print("Adding video #%d" % (video_index,))
             self.addVideoAndUploaderAndCommentsByVideoResource(video_resource)
@@ -503,7 +530,6 @@ class PopulateDB(object):
                 
         # Retrieving the remaining videos pages
         while ('nextPageToken' in video_list_response) and (self.db_records_num < DB_RECORDS_NUM_MIN):
-        
             page_token = video_list_response['nextPageToken']
             video_list_response = PopulateDB.callMethodWithRetries(self.getPopularVideoListResponse, page_token)  
             if video_list_response is None:
@@ -531,43 +557,53 @@ class PopulateDB(object):
         '''
         if 'id' not in video_resource:
             return
-        video_id = video_resource["id"]
+        video_youtube_id = video_resource["id"]
         
         try:
             self.db_cursor.execute(
-                "DELETE FROM searcher_comments " \
-                "WHERE comment_id = '%s'" 
-                (video_id)
+                "DELETE FROM searcher_videos " \
+                "WHERE video_youtube_id = '%s'" 
+                (video_youtube_id)
             )
             self.db_connection.commit()
             self.db_records_num -= 1
             return True
         except Exception as e:
             self.db_connection.rollback()
-            print("Failed removing the video with id = %s: %s" % (video_id, str(e),))
+            print("Failed removing the video with youtube_id = %s: %s" % (video_youtube_id, str(e),))
             return False
         except:
             # Raising the exception again so keyboard interrupt wouldn't be ignored
             self.db_connection.rollback()
-            print("Failed removing the video with id = %s." % (video_id,))
+            print("Failed removing the video with id = %s." % (video_youtube_id,))
             raise
         
     def updateVideo(self, video_resource):
         '''
         Updates the tuple of the given video in search_videos.
-        Returns True for success, False for failure.
+        Returns the video id (the primary key of the db) of the updated video, or None if an error occured.
         '''
         # Retrieving the video information from the resource
-        video_id = video_resource["id"]
+        video_youtube_id = video_resource["id"]
         video_name = video_resource["snippet"]["title"]
         video_name_encoded = video_name.encode('utf-8')
         video_view_count = int(video_resource["statistics"]["viewCount"])
         video_comment_count = int(video_resource["statistics"]["commentCount"])
         video_embeddable = video_resource["status"]["embeddable"]
-        video_url = PopulateDB.getVideoUrl(video_id, video_embeddable)
+        video_url = PopulateDB.getVideoUrl(video_youtube_id, video_embeddable)
         
         # Updating the video's row in the db
         try:
+            self.db_cursor.execute(
+                "SELECT video_id " \
+                "FROM searcher_videos " \
+                "WHERE video_youtube_id = %s",
+                (video_youtube_id))
+            video_rows = self.db_cursor.fetchall()
+            if len(video_rows) != 1:
+                print("Error: There is no video with youtube_video_id = %s in the db." % (video_youtube_id,))
+                return None
+            video_id = video_rows[0][0]
             self.db_cursor.execute(
                 "UPDATE  searcher_videos " \
                 "SET     video_name = %s, video_view_count = %s, video_comment_count = %s, video_embeddable = %s, video_url = %s " \
@@ -576,15 +612,15 @@ class PopulateDB(object):
             )
             self.db_connection.commit()
             self.db_records_num += 1
-            return True
+            return video_id
         except Exception as e:
             self.db_connection.rollback()
-            print("Failed updating the video with id = %s: %s" % (video_id, str(e),))
-            return False
+            print("Failed updating the video with youtube_id = %s: %s" % (video_youtube_id, str(e),))
+            return None
         except:
             # Raising the exception again so keyboard interrupt wouldn't be ignored
             self.db_connection.rollback()
-            print("Failed updating the video with id = %s." % (video_id,))
+            print("Failed updating the video with youtube_id = %s." % (video_youtube_id,))
             raise
 
         
@@ -596,8 +632,9 @@ class PopulateDB(object):
             self.removeVideo(video_resource)
             return 
         
-        if self.updateVideo(video_resource):
-            self.addVideoComments(video_resource["id"])
+        video_id = self.updateVideo(video_resource)
+        if video_id is not None:
+            self.addVideoComments(video_id, video_resource["id"])
    
     def updateVideoAndAddCommentsForVideosList(self, video_list_response, video_index):
         '''
@@ -618,28 +655,28 @@ class PopulateDB(object):
         Updates the information of the existing videos and add their comments.
         '''
         # Retrieving the ids of the videos
-        video_ids = []
+        video_youtube_ids = []
         try:
-            query_exec_result = self.db_cursor.execute('SELECT video_id FROM searcher_videos')
+            query_exec_result = self.db_cursor.execute('SELECT video_youtube_id FROM searcher_videos')
             video_rows = self.db_cursor.fetchall()
         except Exception as e:
-            print("Failed retrieving the ids of the videos from the db: %s" % (str(e),))
+            print("Failed retrieving the youtube ids of the videos from the db: %s" % (str(e),))
             return
         except:
             # Raising the exception again so keyboard interrupt wouldn't be ignored
-            print("Failed retrieving the ids of the videos from the db")
+            print("Failed retrieving the youtube ids of the videos from the db")
             raise
             
         for video_row in video_rows:
-            video_ids.append(video_row[0])
+            video_youtube_ids.append(video_row[0])
         
         # Retrieving the information on each group of videos, each group has at most 50 videos (because of the api limitation)
         video_index = 0
-        video_id_groups = [video_ids[i : i + 50] for i in range(0, len(video_ids), 50)]
-        for video_id_group in video_id_groups:
-            video_list_response = PopulateDB.callMethodWithRetries(self.getSpecificVideoListResponse, ",".join(video_id_group))
+        video_youtube_id_groups = [video_youtube_ids[i : i + 50] for i in range(0, len(video_youtube_ids), 50)]
+        for video_youtube_id_group in video_youtube_id_groups:
+            video_list_response = PopulateDB.callMethodWithRetries(self.getSpecificVideoListResponse, ",".join(video_youtube_id_group))
             if video_list_response is None:
-                print("Failed retrieving information regarding the following video group: %s" % (str(video_id_group),))
+                print("Failed retrieving information regarding the following video group: %s" % (str(video_youtube_id_group),))
                 return
             video_index = self.updateVideoAndAddCommentsForVideosList(video_list_response, video_index)
             
@@ -762,7 +799,7 @@ def areArgsValid(args):
     
     if args[1] in ['populate', 'update']:
         if len(args) == 3:
-            return arg[2].isdigit()
+            return args[2].isdigit()
         return len(args) == 2
         
     elif args[1] == 'add_by_keyword':
@@ -780,7 +817,7 @@ def areArgsValid(args):
         return False
         
 def isSpecifiedCommentsPerVideoMax(args):
-    return ((len(args) == 5) or (len(args) == 2))
+    return ((len(args) == 5) or (len(args) == 3))
         
 if __name__ == "__main__":
 
