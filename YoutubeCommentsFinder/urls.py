@@ -19,7 +19,6 @@ from searcher import views
 urlpatterns = [
     url(r'^admin/', admin.site.urls),
     url(r'^$', views.index, name='index'),
-    url(r'^searcher/', views.searcher, name='searcher'),
-	url(r'^populate/', views.populateDb, name='populateDb')
+    url(r'^searcher/', views.searcher, name='searcher')
     #url(r'^searcher/', include('searcher.urls')),
 ]

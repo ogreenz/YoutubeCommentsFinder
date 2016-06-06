@@ -45,8 +45,3 @@ def searcher(request):
         return render(request, 'searcher/index.html', context)
     """
 
-def populateDb(request):
-	db = PopulateDB()
-	db.addPopularVideosAndUploadersAndComments()
-	db.cleanup()
-	return render(request, 'searcher/base.html')

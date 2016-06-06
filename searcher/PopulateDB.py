@@ -4,12 +4,9 @@ from oauth2client.tools import argparser
 import MySQLdb
 import httplib
 import httplib2
-import os
 import random
 import sys
 import time
-import traceback
-#from django.db import connection
 
 # constants
 DEVELOPER_KEY = "AIzaSyBs2Te9khQZNLYB2N0chEq3bRx3qtikNSI"
@@ -791,22 +788,23 @@ if __name__ == "__main__":
         print(USAGE)
         exit()
         
-    db = None
     if isSpecifiedCommentsPerVideoMax(sys.argv):
         # This parameter is always last since it's optional
         db = PopulateDB(comments_per_video_max = int(sys.argv[-1]))
     else:
         db = PopulateDB()
         
-    if (len(sys.argv) == 1) or (sys.argv[1] == 'populate'):
-        db.addPopularVideosAndUploadersAndComments()
-        print("Populated the db with %d records." % (db.db_records_num,))
-    elif sys.argv[1] == 'update':
-        db.updateDB()
-        print("After update: db has %d records." % (db.db_records_num,))
-    elif sys.argv[1] == 'add_by_keyword':
-        db.addVideosAndUploadersAndCommentsBySearchString(sys.argv[2], int(sys.argv[3]))
-        print("Added %d new records." % (db.db_records_num,))
-        
-    db.cleanup()
-        
+    try:        
+        if (len(sys.argv) == 1) or (sys.argv[1] == 'populate'):
+            db.addPopularVideosAndUploadersAndComments()
+            print("Populated the db with %d records." % (db.db_records_num,))
+        elif sys.argv[1] == 'update':
+            db.updateDB()
+            print("After update: db has %d records." % (db.db_records_num,))
+        elif sys.argv[1] == 'add_by_keyword':
+            db.addVideosAndUploadersAndCommentsBySearchString(sys.argv[2], int(sys.argv[3]))
+            print("Added %d new records." % (db.db_records_num,))        
+        db.cleanup()
+    except:
+        db.cleanup()
+        raise

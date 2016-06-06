@@ -1,4 +1,3 @@
-from django.db import connection
 from .SearchResult import CommentResult, SearchResult
 from .PopulateDB import PopulateDB
 import pdb
@@ -61,15 +60,14 @@ class DB(object):
             pass
             
         # Encoding in utf-8
-        videoName = DB.getUtf8EncodedString(videoName)
-        videoUploader = DB.getUtf8EncodedString(videoUploader)
-        videoCommenter = DB.getUtf8EncodedString(videoCommenter)
-        commentText = DB.getUtf8EncodedString(commentText)
+        if isFirstTry:
+            videoName = DB.getUtf8EncodedString(videoName)
+            videoUploader = DB.getUtf8EncodedString(videoUploader)
+            videoCommenter = DB.getUtf8EncodedString(videoCommenter)
+            commentText = DB.getUtf8EncodedString(commentText)
 
-        #cursor = connection.cursor()
         cursor = self.db_connection.cursor()
-
-
+        
         searchRes = []
         video_ids = []
         video_rows = []
@@ -192,7 +190,3 @@ class DB(object):
                     searchRes.append(vid)
 
         return searchRes
-
-    def addVideoToInternalDB(self, videoName):
-        #For Tamar And Alon
-        raise NotImplemented()
