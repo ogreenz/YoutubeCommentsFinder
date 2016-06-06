@@ -1,5 +1,6 @@
 from django.db import connection
 from .SearchResult import CommentResult, SearchResult
+from .PopulateDB import PopulateDB
 import pdb
 import searcher
 import MySQLdb
@@ -8,8 +9,10 @@ DB_SERVER = 'mysqlsrv.cs.tau.ac.il'
 DB_NAME = 'DbMysql09'
 DB_USER = DB_NAME
 DB_PASSWORD = DB_NAME
+COMMENTS_PER_NEW_VIDEO_MAX = 100
+NEW_VIDEOS_PER_UNSUCCESSFUL_SEARCH = 1
 
-# The following dictionaries are based on the order of the attributes in each table in the database.
+# The following dictionaries are based on the order of the attributes in each table in the database
 USER_ATTRS = { 
                 'user_channel_id':      0, 
                 'user_channel_title':   1 
@@ -35,9 +38,11 @@ COMMENT_ATTR = {
 class DB(object):
 
     def __init__(self):
-		self.db_connection = MySQLdb.connect(DB_SERVER, DB_USER, DB_USER, DB_PASSWORD)
+        self.db_connection = MySQLdb.connect(DB_SERVER, DB_USER, DB_USER, DB_PASSWORD)
+        self.db_populater = PopulateDB(comments_per_video_max = COMMENTS_PER_NEW_VIDEO_MAX, db_connection = self.db_connection) 
 		
     def cleanup(self):
+        self.db_populater.cleanup()
         self.db_connection.close()
 
     def getVideosAndComments(self, videoName, videoUploader, videoCommenter, commentText):
@@ -95,15 +100,14 @@ class DB(object):
                 # lets try to find some video with these params
                 if isFirstTry:
                     # call the function that adds new videos to our db
-                    # if videoName is not None:
-                    # self.addVideoToInternalDB(videoName)
-                    # retry the search
-                    # searchRes = DB.fetchFromDB(False,videoName, videoUploader, videoCommenter, commentText)
-                    # return video_Objs
-                    # else
-                    # let the user know there is no data for this search
-                    # return with nothing
-                    pass
+                    if videoName is not None:
+                        self.db_populater.addVideosAndUploadersAndCommentsBySearchString(videoName, NEW_VIDEOS_PER_UNSUCCESSFUL_SEARCH)
+                        # retry the search
+                        return self.fetchFromDB(False,videoName, videoUploader, videoCommenter, commentText)
+                    else:
+                        # let the user know there is no data for this search
+                        # return with nothing
+                        pass
                 else:
                     # let the user know there is no data for this search
                     # return with nothing
@@ -135,15 +139,14 @@ class DB(object):
                     # we found nothing
                     if isFirstTry:
                         # call the function that adds new videos to our db
-                        # if videoName is not None:
-                            # self.addVideoToInternalDB(videoName)
+                        if videoName is not None:
+                            self.db_populater.addVideosAndUploadersAndCommentsBySearchString(videoName, NEW_VIDEOS_PER_UNSUCCESSFUL_SEARCH)
                             # retry the search
-                            # searchRes = DB.fetchFromDB(False,videoName, videoUploader, videoCommenter, commentText)
-                            # return video_Objs
+                            return self.fetchFromDB(False,videoName, videoUploader, videoCommenter, commentText)
                         # else
                             # let the user know there is no data for this search
                             # return with nothing
-                        pass
+                            pass
                     else:
                         # let the user know there is no data for this search
                         # return with nothing
