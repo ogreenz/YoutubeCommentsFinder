@@ -11,19 +11,20 @@
         {% else %}
             <a href="{{ res.video_url }}">{{ res.video_title }}</a>
         {% endif %}
-        <table style="width: 100%">
+		
+        <table style="table-layout: fixed; width: 100%">
         <b>Total number of comments: {{ res.comments_list|length }}</b>
         <tr>
          <td><b> Commenter</b></td>
-         <td><b> Comment</b></td>
-         <td><b> Likes</b></td>
+         <td style="text-align: center"><b> Comment</b></td>
+         <td style="text-align: right"><b> Likes</b></td>
         </tr>
         {% if res.comments_list %}
             {% for comment in res.comments_list %}
                 <tr>
-                <td>{{ comment.user }}</td>
-                <td>{{ comment.content }}</td>
-                <td>{{ comment.likes }}</td>
+                <td style="word-wrap: break-word; text-align: left">{{ comment.user }}</td>
+                <td style="word-wrap: break-word; text-align: left">{{ comment.content }}</td>
+                <td style="word-wrap: break-word; text-align: right">{{ comment.likes }}</td>
                 </tr>
             {% endfor %}
         {% else %}

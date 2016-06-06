@@ -13,6 +13,15 @@ body {
 a:link, a:visited { color: #0066CC; text-decoration: none} 
 a:active, a:hover { color: #008800; text-decoration: underline}
 
+table {
+  table-layout: fixed;
+  width: 100%;
+}
+td {
+  word-wrap: break-word;
+	text-align: centre;
+}
+
 #templatemo_container_wrapper {
 	background: url(images/templatemo_side_bg.gif) repeat-x;
 }

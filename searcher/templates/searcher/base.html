@@ -36,23 +36,22 @@
 				<form method="post" action="{% url 'searcher' %}", id="search-form">
 					{% csrf_token %}
 					<fieldset>
-
-					<table style="width:100%">
+					<table style="table-layout: fixed; width: 100%">
 					  <tr>
-						<td>Video Name:</td>
-						<td><input type="text" id="video_name" name="video_name" value="" /></td>
+						<td style="word-wrap: break-word">Video Name:</td>
+						<td style="word-wrap: break-word"><input type="text" id="video_name" name="video_name" value="" /></td>
 					  </tr>
 					  <tr>
-						<td>Video uploader:</td>
-						<td><input type="text" id="video_uploader" name="video_uploader" value="" /></td>
+						<td style="word-wrap: break-word">Video uploader:</td>
+						<td style="word-wrap: break-word"><input type="text" id="video_uploader" name="video_uploader" value="" /></td>
 					  </tr>
 					  <tr>
-						<td>Video Commenter:</td>
-						<td><input type="text" id="commenter" name="commenter" value="" /></td>
+						<td style="word-wrap: break-word">Video Commenter:</td>
+						<td style="word-wrap: break-word"><input type="text" id="commenter" name="commenter" value="" /></td>
 					  </tr>
 					  <tr>
-						<td>Comment keyword:</td>
-						<td><input type="text" id="comment_keyword" name="comment_keyword" value="" /></td>
+						<td style="word-wrap: break-word">Comment keyword:</td>
+						<td style="word-wrap: break-word"><input type="text" id="comment_keyword" name="comment_keyword" value="" /></td>
 					  </tr>
 					</table>
 					</br>
