@@ -23,7 +23,12 @@ VIDEO_LIST_PART = 'id, snippet, statistics, status'
 VIDEO_LIST_FIELDS = 'nextPageToken, items(id ,snippet(channelId, title), statistics(viewCount, commentCount), status(embeddable))'
 DB_RECORDS_NUM_MIN = 150000
 COMMENTS_PER_VIDEO_MAX = 2000
-USAGE = "USAGE: python %s populate | update" % (sys.argv[0])
+USAGE = "USAGE: python %s <command> [search_string] [max_results]\n" \
+        "command can be:\n" \
+        "populate - you should use this when the db is empty, and it will be populated with at least %d records.\n" \
+        "update - updates the db by updating the details of the existing videos and re-adding their comments.\n" \
+        "add_by_keyword <search_string> <max_results> - adds at most max_results videos that match search_string. " \
+        "max_results should be between 1 to 50.\n" % (sys.argv[0], DB_RECORDS_NUM_MIN)
 
 # Maximum number of times to retry before giving up.
 MAX_RETRIES = 2
@@ -190,14 +195,15 @@ class PopulateDB(object):
             
         text_display_encoded = text_display.encode('utf-8')
         try:
-            self.db_cursor.execute(
+            affected_rows_num = self.db_cursor.execute(
                  "INSERT INTO searcher_comments (comment_id, video_id_id, comment_channel_id_id, comment_text, like_count)" \
                  "Values (%s, %s, %s, %s, %s)" \
                  "ON DUPLICATE KEY UPDATE comment_id = comment_id",
                 (comment_id, video_id, author_channel_id, text_display_encoded, like_count)
             )
             self.db_connection.commit()
-            self.db_records_num += 1
+            if affected_rows_num == 1:
+                self.db_records_num += 1
         except Exception as e:
             self.db_connection.rollback()
             print("Failed inserting comment with id = %s to the db: %s" % (comment_id, str(e)))
@@ -343,14 +349,15 @@ class PopulateDB(object):
         
         # Adding the video to the db
         try:
-            self.db_cursor.execute(
+            affected_rows_num = self.db_cursor.execute(
                  "INSERT INTO searcher_videos (video_id, video_name, video_channel_id_id, video_view_count, video_comment_count, video_embeddable, video_url)" \
                  "Values (%s, %s, %s, %s, %s, %s, %s)" \
                  "ON DUPLICATE KEY UPDATE video_id = video_id",
                 (video_id, video_name_encoded, video_channel_id, video_view_count, video_comment_count, video_embeddable, video_url)
             )
             self.db_connection.commit()
-            self.db_records_num += 1
+            if affected_rows_num == 1:
+                self.db_records_num += 1
             return True
         except Exception as e:
             self.db_connection.rollback()
@@ -662,9 +669,97 @@ class PopulateDB(object):
             
         self.updateExistingVideosAndAddComments()
         
+    def getSearchListResponse(self, search_string, max_results):
+        '''
+        Calls the youtube api list method of the resource Search, in order to find the videos that match
+        the give search string.
+        The max_results parameter should be between 1 and 50.
+        This should be wrapped with callMethodWithRetries.
+        '''
+        search_list_response = self.youtube_service.search().list(
+            part = 'id',
+            fields = 'items(id(kind, videoId))', 
+            q = search_string, 
+            type = 'video',
+            maxResults = max_results
+        ).execute()
+        return search_list_response
+        
+    @staticmethod
+    def validateSearchResource(search_resource):
+        '''
+        Checks if the given search resource is valid, and prints an error message if it isn't.
+        Returns True if it's valid, False otherwise.
+        '''
+        if 'id' not in search_resource:
+            print("Invalid search resource: 'id' part is missing.")
+            return False
+
+        if 'kind' not in search_resource['id']:
+            print("Invalid search resource: 'id.kind' field is missing.")
+            return False
+
+        if search_resource['id']['kind'] != 'youtube#video':
+            print("Invalid search resource: 'id.kind' field is not 'youtube#video'")
+            return False
+            
+        if 'videoId' not in search_resource['id']:
+            print("Invalid search resouece: 'id.videoId' field is missing.")
+            return False
+
+        return True
+            
+    def addVideosAndUploadersAndCommentsBySearchString(self, search_string, max_results):
+        '''
+        Finds videos that match the given search string, 
+        and adds them as well as their uploaders and comments to the db. 
+        The max_results parameter should be between 1 and 50. 
+        '''
+        # Validating the max_results parameter
+        if max_results < 1:
+            print("The max_results parameter for the matching videos should be between 1 to 50. Using max_results = 1.")
+            max_results = 1
+        elif max_results > 50:
+            print("The max_results parameter for the matching videos should be between 1 to 50. Using max_results = 50.")
+            max_results = 50
+        
+        # Retrieving the video ids
+        video_ids = []
+        search_list_response = PopulateDB.callMethodWithRetries(self.getSearchListResponse, search_string, max_results)
+        if search_list_response is None:
+            print("Failed retrieving the matching videos.")
+            return
+        for search_resource in search_list_response.get('items',[]):
+            if PopulateDB.validateSearchResource(search_resource):
+                video_ids.append(search_resource['id']['videoId'])
+               
+        # Retrieving the information (and adding to the db) for each group of videos, each group has at most 50 videos 
+        # (because of the api limitation)
+        video_index = 0
+        video_id_groups = [video_ids[i : i + 50] for i in range(0, len(video_ids), 50)]
+        for video_id_group in video_id_groups:
+            video_list_response = PopulateDB.callMethodWithRetries(self.getSpecificVideoListResponse, ",".join(video_id_group))
+            if video_list_response is None:
+                print("Failed retrieving information regarding the following video group: %s" % (str(video_id_group),))
+                return
+            video_index = self.addVideoAndUploaderAndCommentsForVideosList(video_list_response, video_index)
+        
+
+def areArgsValid(args):
+    '''
+    Checks if the given command-line arguments are valid.
+    '''
+    if (len(args) != 2) and (len(args) != 4):
+        return False
+    
+    if len(args) == 2:
+        return ((args[1] == 'populate') or (args[1] == 'update'))
+    else:
+        return ((args[1] == 'add_by_keyword') and (args[3].isdigit()))
+        
 if __name__ == "__main__":
 
-    if len(sys.argv) > 2:
+    if not areArgsValid(sys.argv):
         print(USAGE)
         exit()
         
@@ -674,14 +769,10 @@ if __name__ == "__main__":
         print("Populated the db with %d records." % (db.db_records_num,))
     elif sys.argv[1] == 'update':
         db.updateDB()
-        print("After update: db has %d records." % (db.db_records_num))
-    else:
-        print(USAGE)
-        db.cleanup()
-        exit()
+        print("After update: db has %d records." % (db.db_records_num,))
+    elif sys.argv[1] == 'add_by_keyword':
+        db.addVideosAndUploadersAndCommentsBySearchString(sys.argv[2], int(sys.argv[3]))
+        print("Added %d new records." % (db.db_records_num,))
         
-    if db.db_records_num < DB_RECORDS_NUM_MIN:
-        print("The required minimal number of records is %d. " \
-              "Consider changing the boundry of number of comments per video." % (DB_RECORDS_NUM_MIN,))
     db.cleanup()
         
