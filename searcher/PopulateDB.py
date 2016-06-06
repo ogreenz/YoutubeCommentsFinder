@@ -27,8 +27,8 @@ USAGE = "USAGE: The script arguments can be one of the following:\n" \
         "command can be:\n" \
         "populate [comments_per_video_max] - you should use this when the db is empty, and it will be populated with at least %d records.\n" \
         "update [comments_per_video_max] - updates the db by updating the details of the existing videos and re-adding their comments.\n" \
-        "add_by_keyword <search_string> <max_results> [comments_per_video_max] - adds at most max_results videos that match search_string. " \
-        "max_results should be between 1 to 50.\n" \
+        "add_by_keyword <search_string> <max_videos> [comments_per_video_max] - adds at most max_videos videos that match search_string. " \
+        "max_videos should be between 1 to 50.\n" \
         "The default for comments_per_video_max is %d" % (DB_RECORDS_NUM_MIN, DEFAULT_COMMENTS_PER_VIDEO_MAX)
 
 # Maximum number of times to retry before giving up.
@@ -46,15 +46,24 @@ RETRIABLE_STATUS_CODES = [400, 500, 502, 503, 504]
 
 class PopulateDB(object):
 
-    def __init__(self, comments_per_video_max = DEFAULT_COMMENTS_PER_VIDEO_MAX):
+    def __init__(self, comments_per_video_max = DEFAULT_COMMENTS_PER_VIDEO_MAX, db_connection = None):
+        '''
+        Creates the youtube service and the db connection if it's not given.
+        '''
         self.youtube_service = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, developerKey = DEVELOPER_KEY)
-        self.db_connection = MySQLdb.connect(DB_SERVER, DB_USER, DB_USER, DB_PASSWORD)
+        if db_connection is not None:
+            self.db_connection = db_connection
+            self.should_close_db_connection = False
+        else:
+            self.db_connection = MySQLdb.connect(DB_SERVER, DB_USER, DB_USER, DB_PASSWORD)
+            self.should_close_db_connection = True
         self.db_cursor = self.db_connection.cursor()
         self.db_records_num = 0
         self.comments_per_video_max = comments_per_video_max
         
     def cleanup(self):
-        self.db_connection.close()
+        if self.should_close_db_connection:
+            self.db_connection.close()
         
     @staticmethod
     def callMethodWithRetries(method, method_arg1, method_arg2 = None):
@@ -711,23 +720,23 @@ class PopulateDB(object):
 
         return True
             
-    def addVideosAndUploadersAndCommentsBySearchString(self, search_string, max_results):
+    def addVideosAndUploadersAndCommentsBySearchString(self, search_string, max_videos):
         '''
         Finds videos that match the given search string, 
         and adds them as well as their uploaders and comments to the db. 
         The max_results parameter should be between 1 and 50. 
         '''
         # Validating the max_results parameter
-        if max_results < 1:
-            print("The max_results parameter for the matching videos should be between 1 to 50. Using max_results = 1.")
-            max_results = 1
-        elif max_results > 50:
-            print("The max_results parameter for the matching videos should be between 1 to 50. Using max_results = 50.")
-            max_results = 50
+        if max_videos < 1:
+            print("The max_videos parameter for the matching videos should be between 1 to 50. Using max_videos = 1.")
+            max_videos = 1
+        elif max_videos > 50:
+            print("The max_videos parameter for the matching videos should be between 1 to 50. Using max_videos = 50.")
+            max_videos = 50
         
         # Retrieving the video ids
         video_ids = []
-        search_list_response = PopulateDB.callMethodWithRetries(self.getSearchListResponse, search_string, max_results)
+        search_list_response = PopulateDB.callMethodWithRetries(self.getSearchListResponse, search_string, max_videos)
         if search_list_response is None:
             print("Failed retrieving the matching videos.")
             return
@@ -785,7 +794,7 @@ if __name__ == "__main__":
     db = None
     if isSpecifiedCommentsPerVideoMax(sys.argv):
         # This parameter is always last since it's optional
-        db = PopulateDB(int(sys.argv[-1]))
+        db = PopulateDB(comments_per_video_max = int(sys.argv[-1]))
     else:
         db = PopulateDB()
         
