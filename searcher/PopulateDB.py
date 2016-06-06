@@ -22,13 +22,14 @@ DB_PASSWORD = DB_NAME
 VIDEO_LIST_PART = 'id, snippet, statistics, status'
 VIDEO_LIST_FIELDS = 'nextPageToken, items(id ,snippet(channelId, title), statistics(viewCount, commentCount), status(embeddable))'
 DB_RECORDS_NUM_MIN = 150000
-COMMENTS_PER_VIDEO_MAX = 2000
-USAGE = "USAGE: python %s <command> [search_string] [max_results]\n" \
+DEFAULT_COMMENTS_PER_VIDEO_MAX = 2000
+USAGE = "USAGE: The script arguments can be one of the following:\n" \
         "command can be:\n" \
-        "populate - you should use this when the db is empty, and it will be populated with at least %d records.\n" \
-        "update - updates the db by updating the details of the existing videos and re-adding their comments.\n" \
-        "add_by_keyword <search_string> <max_results> - adds at most max_results videos that match search_string. " \
-        "max_results should be between 1 to 50.\n" % (sys.argv[0], DB_RECORDS_NUM_MIN)
+        "populate [comments_per_video_max] - you should use this when the db is empty, and it will be populated with at least %d records.\n" \
+        "update [comments_per_video_max] - updates the db by updating the details of the existing videos and re-adding their comments.\n" \
+        "add_by_keyword <search_string> <max_results> [comments_per_video_max] - adds at most max_results videos that match search_string. " \
+        "max_results should be between 1 to 50.\n" \
+        "The default for comments_per_video_max is %d" % (DB_RECORDS_NUM_MIN, DEFAULT_COMMENTS_PER_VIDEO_MAX)
 
 # Maximum number of times to retry before giving up.
 MAX_RETRIES = 2
@@ -45,11 +46,12 @@ RETRIABLE_STATUS_CODES = [400, 500, 502, 503, 504]
 
 class PopulateDB(object):
 
-    def __init__(self):
+    def __init__(self, comments_per_video_max = DEFAULT_COMMENTS_PER_VIDEO_MAX):
         self.youtube_service = build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION, developerKey = DEVELOPER_KEY)
         self.db_connection = MySQLdb.connect(DB_SERVER, DB_USER, DB_USER, DB_PASSWORD)
         self.db_cursor = self.db_connection.cursor()
         self.db_records_num = 0
+        self.comments_per_video_max = comments_per_video_max
         
     def cleanup(self):
         self.db_connection.close()
@@ -321,7 +323,7 @@ class PopulateDB(object):
         self.addCommentPage(comment_threads_list_response.get('items', []), video_id)
 
         # Retrieving the remaining comments pages
-        while ('nextPageToken' in comment_threads_list_response) and (comments_num < COMMENTS_PER_VIDEO_MAX):
+        while ('nextPageToken' in comment_threads_list_response) and (comments_num < self.comments_per_video_max):
             page_token = comment_threads_list_response['nextPageToken']
             comment_threads_list_response = PopulateDB.callMethodWithRetries(self.getCommentThreadsListReponse, video_id, page_token)
             if comment_threads_list_response is None:
@@ -749,13 +751,30 @@ def areArgsValid(args):
     '''
     Checks if the given command-line arguments are valid.
     '''
-    if (len(args) != 2) and (len(args) != 4):
+    if len(args) < 2:
         return False
     
-    if len(args) == 2:
-        return ((args[1] == 'populate') or (args[1] == 'update'))
+    if args[1] in ['populate', 'update']:
+        if len(args) == 3:
+            return arg[2].isdigit()
+        return len(args) == 2
+        
+    elif args[1] == 'add_by_keyword':
+        if len(args) < 4:
+            return False
+        if not args[3].isdigit():
+            return False
+        if len(args) > 5:
+            return False
+        if len(args) == 5:
+            return args[4].isdigit()
+        return True
+        
     else:
-        return ((args[1] == 'add_by_keyword') and (args[3].isdigit()))
+        return False
+        
+def isSpecifiedCommentsPerVideoMax(args):
+    return ((len(args) == 5) or (len(args) == 2))
         
 if __name__ == "__main__":
 
@@ -763,7 +782,13 @@ if __name__ == "__main__":
         print(USAGE)
         exit()
         
-    db = PopulateDB()
+    db = None
+    if isSpecifiedCommentsPerVideoMax(sys.argv):
+        # This parameter is always last since it's optional
+        db = PopulateDB(int(sys.argv[-1]))
+    else:
+        db = PopulateDB()
+        
     if (len(sys.argv) == 1) or (sys.argv[1] == 'populate'):
         db.addPopularVideosAndUploadersAndComments()
         print("Populated the db with %d records." % (db.db_records_num,))
