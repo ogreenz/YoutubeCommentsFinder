@@ -382,8 +382,7 @@ class PopulateDB(object):
             if len(video_rows) == 0:
                 self.db_cursor.execute(
                      "INSERT INTO searcher_videos (video_youtube_id, video_name, video_channel_id_id, video_view_count, video_comment_count, video_embeddable, video_url)" \
-                     "Values (%s, %s, %s, %s, %s, %s, %s)" \
-                     "ON DUPLICATE KEY UPDATE video_youtube_id = video_youtube_id",
+                     "Values (%s, %s, %s, %s, %s, %s, %s)",
                     (video_youtube_id, video_name_encoded, user_id, video_view_count, video_comment_count, video_embeddable, video_url)
                 )
                 video_id = self.db_cursor.lastrowid
