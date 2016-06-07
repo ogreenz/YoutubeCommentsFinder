@@ -166,7 +166,6 @@ class DB(object):
                 query = "SELECT	* From searcher_videos as videos, searcher_users as users " \
                         "Where videos.video_channel_id_id = users.user_channel_id " \
                         "and videos.video_id in ("+ ",".join(video_ids) + ") "
-                print(query)
                 exec_result = cursor.execute(query)
                 video_rows = cursor.fetchall()
 
