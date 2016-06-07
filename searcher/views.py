@@ -6,7 +6,7 @@ from django.shortcuts import render
 from .forms import SearchForm
 from . import DB
 from .PopulateDB import PopulateDB
-
+from MySQLdb import escape_string
 def index(request):
     return render(request, 'searcher/base.html')
 
@@ -18,9 +18,17 @@ def searcher(request):
         # form = form_class(data=request.POST)
         # if form.is_valid():
         video_name = request.POST.get("video_name", None)
+        if video_name:
+            video_name = escape_string(video_name)
         video_uploader = request.POST.get("video_uploader", None)
+        if video_uploader:
+            video_uploader = escape_string(video_uploader)
         commenter = request.POST.get("commenter", None)
+        if commenter:
+            commenter = escape_string(commenter)
         keyword = request.POST.get("comment_keyword", None)
+        if keyword:
+            keyword = escape_string(keyword)
          
         db = DB.DB()
         results = db.getVideosAndComments(video_name, video_uploader, commenter, keyword)
