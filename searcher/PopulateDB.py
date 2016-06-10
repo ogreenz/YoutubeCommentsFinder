@@ -163,13 +163,13 @@ class PopulateDB(object):
                 "SELECT user_channel_id " \
                 "FROM searcher_users " \
                 "WHERE user_channel_youtube_id = %s",
-                (channel_youtube_id))
+                (channel_youtube_id,))
             user_rows = self.db_cursor.fetchall()
             if len(user_rows) == 0:
                 self.db_cursor.execute(
                      "INSERT INTO searcher_users (user_channel_youtube_id, user_channel_title) " \
                      "Values (%s, %s) ",
-                    (channel_youtube_id, user_channel_title_encoded)
+                    (channel_youtube_id, user_channel_title_encoded,)
                 )
                 user_id = self.db_cursor.lastrowid
                 self.db_connection.commit()
@@ -218,13 +218,13 @@ class PopulateDB(object):
                 "SELECT comment_id " \
                 "FROM searcher_comments " \
                 "WHERE comment_youtube_id = %s",
-                (comment_youtube_id))
+                (comment_youtube_id,))
             comment_rows = self.db_cursor.fetchall()
             if len(comment_rows) == 0:
                 self.db_cursor.execute(
                      "INSERT INTO searcher_comments (comment_youtube_id, video_id_id, comment_channel_id_id, comment_text, like_count)" \
                      "Values (%s, %s, %s, %s, %s)",
-                    (comment_youtube_id, video_id, user_id, text_display_encoded, like_count)
+                    (comment_youtube_id, video_id, user_id, text_display_encoded, like_count,)
                 )
                 self.db_connection.commit()
                 self.db_records_num += 1
@@ -377,13 +377,13 @@ class PopulateDB(object):
                 "SELECT video_id " \
                 "FROM searcher_videos " \
                 "WHERE video_youtube_id = %s",
-                (video_youtube_id))
+                (video_youtube_id,))
             video_rows = self.db_cursor.fetchall()
             if len(video_rows) == 0:
                 self.db_cursor.execute(
                      "INSERT INTO searcher_videos (video_youtube_id, video_name, video_channel_id_id, video_view_count, video_comment_count, video_embeddable, video_url)" \
                      "Values (%s, %s, %s, %s, %s, %s, %s)",
-                    (video_youtube_id, video_name_encoded, user_id, video_view_count, video_comment_count, video_embeddable, video_url)
+                    (video_youtube_id, video_name_encoded, user_id, video_view_count, video_comment_count, video_embeddable, video_url,)
                 )
                 video_id = self.db_cursor.lastrowid
                 self.db_connection.commit()
@@ -562,7 +562,7 @@ class PopulateDB(object):
             self.db_cursor.execute(
                 "DELETE FROM searcher_videos " \
                 "WHERE video_youtube_id = '%s'" 
-                (video_youtube_id)
+                (video_youtube_id,)
             )
             self.db_connection.commit()
             self.db_records_num -= 1
@@ -597,7 +597,7 @@ class PopulateDB(object):
                 "SELECT video_id " \
                 "FROM searcher_videos " \
                 "WHERE video_youtube_id = %s",
-                (video_youtube_id))
+                (video_youtube_id,))
             video_rows = self.db_cursor.fetchall()
             if len(video_rows) != 1:
                 print("Error: There is no video with youtube_video_id = %s in the db." % (video_youtube_id,))
@@ -607,7 +607,7 @@ class PopulateDB(object):
                 "UPDATE  searcher_videos " \
                 "SET     video_name = %s, video_view_count = %s, video_comment_count = %s, video_embeddable = %s, video_url = %s " \
                 "WHERE   video_id = %s",
-                (video_name_encoded, video_view_count, video_comment_count, video_embeddable, video_url, video_id)
+                (video_name_encoded, video_view_count, video_comment_count, video_embeddable, video_url, video_id,)
             )
             self.db_connection.commit()
             self.db_records_num += 1
